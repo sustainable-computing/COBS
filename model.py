@@ -48,7 +48,7 @@ class Model:
         self.terminate = False
         self.wait_for_step = Event()
         self.wait_for_state = Event()
-        self.parent, self.child_energy = Pipe(duplex=False)
+        self.parent, self.child_energy = Pipe(duplex=True)
         self.child = None
         self.use_lock = False
 
@@ -200,7 +200,7 @@ class Model:
         if not self.api.exchange.api_data_fully_ready() or not self.warmup_complete:
             return
         current_state = dict()
-
+        # print("Child: Simulating")
         current_state["temperature"] = dict()
         current_state["occupancy"] = dict()
         for name in self.zone_names:
@@ -216,18 +216,23 @@ class Model:
                 current_state["PMV"][zone] = self.api.exchange.get_variable_value(handle)
 
         if self.use_lock:
+            # print("Child: Sending current states")
             self.child_energy.send(current_state)
             self.wait_for_state.set()
             # Take all actions
             self.wait_for_step.clear()
-            self.wait_for_step.wait()
-
+            # print("Child: Waiting for actions")
+            if not self.child_energy.poll():
+                self.wait_for_step.wait()
+            # print("Child: Receiving actions")
             events = self.child_energy.recv()
         else:
             self.current_state = current_state
             self.historical_values.append(self.current_state)
             events = self.queue.trigger(self.counter)
             self.counter += 1
+
+        # print("Child: executing actions")
 
         # Trigger events
         for key in events["actuator"]:
@@ -253,20 +258,25 @@ class Model:
         if action_list is not None:
             for action in action_list:
                 self.queue.schedule_event(**action)
+        # print("Parent: Sending actions")
         self.parent.send(self.queue.trigger(self.counter))
         self.counter += 1
         # Let process grab and execute actions
+        # print("Parent: Releasing child's lock")
         self.wait_for_state.clear()
         self.wait_for_step.set()
-        self.wait_for_state.wait()
+        # print("Parent: Waiting for state values")
+        if not self.parent.poll():
+            self.wait_for_state.wait()
         self.wait_for_state.clear()
         current_state = self.parent.recv()
-        if self.current_state != "Terminated":
+        if current_state != "Terminated":
             self.current_state = current_state
             self.historical_values.append(self.current_state)
         else:
             self.terminate = True
         self.wait_for_state.clear()
+        # print("Parent: received state values")
         return self.current_state
 
     def is_terminate(self):
@@ -274,6 +284,9 @@ class Model:
 
     def reset(self):
         self.init()
+        self.queue = EventQueue()
+        self.historical_values = list()
+        self.ignore_list = set()
         self.wait_for_state.clear()
         self.wait_for_step.clear()
         self.terminate = False
@@ -305,19 +318,21 @@ class Model:
         else:
             self.api.runtime.callback_begin_new_environment(self.generate_output_files)
         self.api.runtime.run_energyplus(self.run_parameters)
-        if not self.use_lock:
+        if self.use_lock:
             self.child_energy.send("Terminated")
+            self.wait_for_state.set()
 
     def init(self):
         self.idf.saveas("input.idf")
+        self.use_lock = False
         self.zone_names = self.get_available_names_under_group("Zone")
         self.get_thermal_names()
         self.warmup_complete = False
 
-    def reset(self):
-        self.queue = EventQueue()
-        self.historical_values = list()
-        self.ignore_list = set()
+    # def reset(self):
+    #     self.queue = EventQueue()
+    #     self.historical_values = list()
+    #     self.ignore_list = set()
 
     def get_current_state_values(self):
         state_values = list(set(self.get_possible_state_values()) - self.ignore_list)

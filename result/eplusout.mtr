@@ -1,0 +1,53 @@
+Program Version,EnergyPlus, Version 9.3.0-baff08990c, YMD=2020.09.22 16:54
+1,5,Environment Title[],Latitude[deg],Longitude[deg],Time Zone[],Elevation[m]
+2,8,Day of Simulation[],Month[],Day of Month[],DST Indicator[1=yes 0=no],Hour[],StartMinute[],EndMinute[],DayType
+3,5,Cumulative Day of Simulation[],Month[],Day of Month[],DST Indicator[1=yes 0=no],DayType  ! When Daily Meters Requested
+4,2,Cumulative Days of Simulation[],Month[]  ! When Monthly Meters Requested
+5,1,Cumulative Days of Simulation[] ! When Run Period Meters Requested
+6,1,Calendar Year of Simulation[] ! When Annual Meters Requested
+12,9,Electricity:Facility [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+24,9,Electricity:Building [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+48,9,InteriorLights:Electricity [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+892,9,Electricity:HVAC [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+1005,9,Electricity:Plant [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+956,9,Gas:Facility [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+968,9,Gas:Plant [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+14,11,Electricity:Facility [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+26,11,Electricity:Building [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+50,11,InteriorLights:Electricity [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+894,11,Electricity:HVAC [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+1007,11,Electricity:Plant [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+958,11,Gas:Facility [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+970,11,Gas:Plant [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+1188,9,MYGENERALLIGHTS [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+1190,11,MYGENERALLIGHTS [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+1200,9,MYBUILDINGELECTRIC [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+1202,11,MYBUILDINGELECTRIC [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+1212,9,MYBUILDINGOTHER [J] !Monthly [Value,Min,Day,Hour,Minute,Max,Day,Hour,Minute]
+1214,11,MYBUILDINGOTHER [J] !RunPeriod [Value,Min,Month,Day,Hour,Minute,Max,Month,Day,Hour,Minute]
+End of Data Dictionary
+1,ONE DAY,  41.98, -87.92,  -6.00, 201.00
+4,1, 1
+12,151696445.62181995,105270.16079473197, 1, 1, 1,105582.7297607019, 1, 8,10
+24,118800000.0,82500.0, 1, 1, 1,82500.0, 1, 1, 1
+48,32400000.0,22500.0, 1, 1, 1,22500.0, 1, 1, 1
+892,32789031.544413296,22770.16079473197, 1, 1, 1,22770.16079473197, 1, 1, 1
+956,47254907.11860189,0.0, 1, 1, 1,136524.09048698387, 1, 7,60
+968,47254907.11860189,0.0, 1, 1, 1,136524.09048698387, 1, 7,60
+1005,107414.0774035932,0.0, 1, 1, 1,312.5689659699225, 1, 8,10
+1188,32400000.0,22500.0, 1, 1, 1,22500.0, 1, 1, 1
+1200,118800000.0,82500.0, 1, 1, 1,82500.0, 1, 1, 1
+1212,86400000.0,60000.0, 1, 1, 1,60000.0, 1, 1, 1
+5,1
+14,151696445.62181995,105270.16079473197, 1, 1, 1, 1,105582.7297607019, 1, 1, 8,10
+26,118800000.0,82500.0, 1, 1, 1, 1,82500.0, 1, 1, 1, 1
+50,32400000.0,22500.0, 1, 1, 1, 1,22500.0, 1, 1, 1, 1
+894,32789031.544413296,22770.16079473197, 1, 1, 1, 1,22770.16079473197, 1, 1, 1, 1
+958,47254907.11860189,0.0, 1, 1, 1, 1,136524.09048698387, 1, 1, 7,60
+970,47254907.11860189,0.0, 1, 1, 1, 1,136524.09048698387, 1, 1, 7,60
+1007,107414.0774035932,0.0, 1, 1, 1, 1,312.5689659699225, 1, 1, 8,10
+1190,32400000.0,22500.0, 1, 1, 1, 1,22500.0, 1, 1, 1, 1
+1202,118800000.0,82500.0, 1, 1, 1, 1,82500.0, 1, 1, 1, 1
+1214,86400000.0,60000.0, 1, 1, 1, 1,60000.0, 1, 1, 1, 1
+End of Data
+ Number of Records Written=          20
