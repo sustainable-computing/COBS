@@ -42,7 +42,7 @@ for name in glob.glob("./*.idf"):
 
     # if new_name[1] != new_name[2]:
     #     count += 1
-    #     print(name)
+    #     print(entry)
     #     print(new_name)
 
 print(count)
