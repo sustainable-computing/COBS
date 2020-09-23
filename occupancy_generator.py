@@ -282,10 +282,8 @@ class Person:
     def decide_come(self):
         """
         Each person need to decide if he/she will come to work today, when exactly they come, and when exactly
-        they leave. Each person target to come at 8:30 am and leave at 5 pm, with a exponential distribution where
-        mu = 30 minute. Use exponential distribution because people tend to come/leave on time with a very small
-        chance of being late. In the meantime, assume that people directly goes into their own office right away.
-        They require some time to walk to their office.
+        they leave. We assume people start to come at 8:30 am and leave at 5 pm, with a poisson arrival lambda = 30 min.
+        Notice that we simulate this as poisson arrival, which means two arrivals are not independent. 
         
         :return: True if come to work, False otherwise
         """
