@@ -8,6 +8,8 @@ COBS is open source, licensed under [MIT](https://github.com/sustainable-computi
 ## Contributing
 We welcome contributions in many forms, such as bug reports, pull requests, etc., and encourage the community to use, improve and extend this platform by adding their HVAC control algorithms and/or building models. For major changes, open an issue first to discuss what you would like to do.
 
+Thank you Gaby Baasch <gaby.baasch@gmail.com> for contributing the platform with the implementation of the GNU RL.
+
 ## Documentation
 Documentation is available at https://cobs-platform.github.io
 
