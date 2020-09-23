@@ -27,8 +27,11 @@ class Model:
     def set_energyplus_folder(cls, path):
         """
         Add the pyenergyplus into the path so the program can find the EnergyPlus.
-        :param path: The installation path of the EnergyPlus 9.3.0.
-        :return: None.
+
+        :parameter path: The installation path of the EnergyPlus 9.3.0.
+        :type path: str
+
+        :return: None
         """
         sys.path.insert(0, path)
         IDF.setiddname(f"{path}Energy+.idd")
@@ -45,13 +48,20 @@ class Model:
                  ):
         """
         Initialize the building by loading the IDF file to the model.
-        :param idf_file_name: The relative path to the IDF file. Use it if you want to use your own model.
-        :param prototype: Either "multi" and "single", indicates the Multi-family low-rise apartment building and Single-family detached house.
-        :param climate_zone: The climate zone code of the building. Please refer to https://codes.iccsafe.org/content/iecc2018/chapter-3-ce-general-requirements.
-        :param weather_file: The relative path to the weather file associate with the building.
-        :param heating_type: Select one from "electric", "gas", "oil", and "pump"
-        :param foundation_type: Select one from "crawspace", "heated", "slab", and "unheated"
-        :param agent: The user-defined Agent class object if the agent is implemented in a class.
+
+        :parameter idf_file_name: The relative path to the IDF file. Use it if you want to use your own model.
+
+        :parameter prototype: Either "multi" and "single", indicates the Multi-family low-rise apartment building and Single-family detached house.
+        
+        :parameter climate_zone: The climate zone code of the building. Please refer to https://codes.iccsafe.org/content/iecc2018/chapter-3-ce-general-requirements.
+        
+        :parameter weather_file: The relative path to the weather file associate with the building.
+        
+        :parameter heating_type: Select one from "electric", "gas", "oil", and "pump"
+        
+        :parameter foundation_type: Select one from "crawspace", "heated", "slab", and "unheated"
+        
+        :parameter agent: The user-defined Agent class object if the agent is implemented in a class.
         """
         if not Model.model_import_flag:
             raise ImportError("You have to set the energyplus folder first")
@@ -94,7 +104,9 @@ class Model:
     def name_reformat(name):
         """
         Convert the entry from the space separated entry to the underline separated entry to match the IDF.
-        :param name: The space separated entry.
+
+        :parameter name: The space separated entry.
+
         :return: The underline separated entry.
         """
         name = name.replace(' ', '_').split('_')
@@ -103,6 +115,7 @@ class Model:
     def list_all_available_configurations(self):
         """
         Generate a list of all type of components appeared in the current building.
+        
         :return: list of components entry.
         """
         return list(self.idf.idfobjects.keys())
@@ -110,6 +123,7 @@ class Model:
     def get_all_configurations(self):
         """
         Read the IDF file, and return the content formatted with the IDD file.
+
         :return: the full IDF file with names and comments aside.
         """
         return self.idf.idfobjects
@@ -118,7 +132,9 @@ class Model:
                               idf_header_name: str):
         """
         Show all available settings for the given type of component.
-        :param idf_header_name: The type of the component.
+        
+        :parameter idf_header_name: The type of the component.
+        
         :return: List of settings entry.
         """
         if not self.idf.idfobjects.get(idf_header_name):
@@ -129,7 +145,9 @@ class Model:
                                         idf_header_name: str):
         """
         Given the type of components, find all available components in the building by their entry.
-        :param idf_header_name: The type of the component.
+        
+        :parameter idf_header_name: The type of the component.
+
         :return: List of names.
         """
         available_names = self.get_sub_configuration(idf_header_name)
@@ -146,8 +164,11 @@ class Model:
                           component_name: str = None):
         """
         Given the type of component, the entry of the target component, find the settings of that component.
-        :param idf_header_name: The type of the component.
-        :param component_name: The entry of the component.
+        
+        :parameter idf_header_name: The type of the component.
+        
+        :parameter component_name: The entry of the component.
+        
         :return: Settings of this component.
         """
         if component_name is None:
@@ -165,9 +186,13 @@ class Model:
                         validate: bool = False):
         """
         Get the range of acceptable values of the specific setting.
-        :param idf_header_name: The type of the component.
-        :param field_name: The setting entry.
-        :param validate: Set to True to check the current value is valid or not.
+        
+        :parameter idf_header_name: The type of the component.
+        
+        :parameter field_name: The setting entry.
+        
+        :parameter validate: Set to True to check the current value is valid or not.
+        
         :return: Validation result or the range of all acceptable values retrieved from the IDD file.
         """
         field_name = field_name.replace(' ', '_')
@@ -183,8 +208,11 @@ class Model:
                           values: dict = None):
         """
         Create and add a new component into the building model with the specific type and setting values.
-        :param idf_header_name: The type of the component.
-        :param values: A dictionary map the setting entry and the setting value.
+        
+        :parameter idf_header_name: The type of the component.
+        
+        :parameter values: A dictionary map the setting entry and the setting value.
+        
         :return: The new component.
         """
         object = self.idf.newidfobject(idf_header_name.upper())
@@ -203,8 +231,11 @@ class Model:
                              component_name: str = None):
         """
         Delete an existing component from the building model.
-        :param idf_header_name: The type of the component.
-        :param component_name: The entry of the component.
+        
+        :parameter idf_header_name: The type of the component.
+        
+        :parameter component_name: The entry of the component.
+        
         :return: None.
         """
         if not self.idf.idfobjects.get(idf_header_name):
@@ -225,9 +256,13 @@ class Model:
                            update_values: dict):
         """
         Edit an existing component in the building model.
-        :param idf_header_name: The type of the component.
-        :param identifier: A dictionary map the setting entry and the setting value to locate the target component.
-        :param update_values: A dictionary map the setting entry and the setting value that needs to update.
+        
+        :parameter idf_header_name: The type of the component.
+        
+        :parameter identifier: A dictionary map the setting entry and the setting value to locate the target component.
+        
+        :parameter update_values: A dictionary map the setting entry and the setting value that needs to update.
+        
         :return: None.
         """
         if not self.idf.idfobjects.get(idf_header_name):
@@ -251,6 +286,7 @@ class Model:
     def _get_thermal_names(self):
         """
         Initialize all available thermal zones.
+        
         :return: None
         """
         people_zones = self.get_configuration("People")
@@ -266,7 +302,9 @@ class Model:
                       path: str):
         """
         Save the modified building model for EnergyPlus simulation
-        :param path: The relative path to the modified IDF file.
+        
+        :parameter path: The relative path to the modified IDF file.
+        
         :return: None.
         """
         self.idf.saveas(path)
@@ -274,6 +312,7 @@ class Model:
     def _initialization(self):
         """
         Initialize the EnergyPlus simulation by letting the EnergyPlus finish the warmup.
+        
         :return: None
         """
         if not self.api.exchange.api_data_fully_ready():
@@ -283,14 +322,16 @@ class Model:
     def _generate_output_files(self):
         """
         Assert errors to terminate the simulation after the warmup in order to generate the EDD file to list all available actions for the current building.
+        
         :return: None
         """
         assert False
 
     def _step_callback(self):
         """
-        Get the state value at each timestep, and modify the building model based on the actions from the `EventQueue'.
+        Get the state value at each timestep, and modify the building model based on the actions from the ``EventQueue``.
         :return: None
+        
         """
         if not self.api.exchange.api_data_fully_ready() or not self.warmup_complete:
             return
@@ -351,8 +392,10 @@ class Model:
 
     def step(self, action_list: list):
         """
-        Add all actions into the `EventQueue', and then generate the state value of the next timestep.
-        :param action_list: list of dictionarys contains the arguments for `EventQueue.schedule_event()'.
+        Add all actions into the ``EventQueue``, and then generate the state value of the next timestep.
+
+        :parameter action_list: list of dictionarys contains the arguments for ``EventQueue.schedule_event()``.
+
         :return: The state value of the current timestep.
         """
         if action_list is not None:
@@ -383,6 +426,7 @@ class Model:
     def is_terminate(self):
         """
         Determine if the simulation is finished or not.
+        
         :return: True if the simulation is done, and False otherwise.
         """
         return self.terminate
@@ -390,6 +434,7 @@ class Model:
     def reset(self):
         """
         Clear the actions and buffer, reset the environment and start the simulation.
+        
         :return: The initial state of the simulation.
         """
         self._init_simulation()
@@ -412,7 +457,9 @@ class Model:
     def simulate(self, terminate_after_warmup=False):
         """
         Run the whole simulation once. If user use this method instead of the reset function, the user need to provide the Agent.
-        :param terminate_after_warmup: True if the simulation should terminate after the warmup.
+        
+        :parameter terminate_after_warmup: True if the simulation should terminate after the warmup.
+        
         :return: None.
         """
         from pyenergyplus.api import EnergyPlusAPI
@@ -439,6 +486,7 @@ class Model:
     def _init_simulation(self):
         """
         Save the modified building model and initialize the zones for states.
+        
         :return: None.
         """
         self.idf.saveas("input.idf")
@@ -450,6 +498,7 @@ class Model:
     def get_current_state_values(self):
         """
         Find the current entries in the state.
+        
         :return: List of entry names that is currently available in the state.
         """
         state_values = list(set(self.get_possible_state_entries()) - self.ignore_list)
@@ -459,8 +508,11 @@ class Model:
     def select_state_values(self, entry=None, index=None):
         """
         Select interested state entries. If selected entry is not available for the current building, it will be ignored.
-        :param entry: Entry names that the state of the environment should have.
-        :param index: Index of all available entries that the state of the environment should have.
+        
+        :parameter entry: Entry names that the state of the environment should have.
+        
+        :parameter index: Index of all available entries that the state of the environment should have.
+        
         :return: None.
         """
         current_state = self.get_current_state_values()
@@ -479,7 +531,9 @@ class Model:
     def add_state_values(self, entry):
         """
         Add entries to the state. If selected entry is not available for the current building, it will be ignored.
-        :param entry: Entry names that the state of the environment should have.
+        
+        :parameter entry: Entry names that the state of the environment should have.
+        
         :return: None.
         """
         if not self.ignore_list:
@@ -492,7 +546,9 @@ class Model:
     def remove_state_values(self, entry):
         """
         Remove entries from the state. If selected entry is not available in the state, it will be ignored.
-        :param entry: Entry names that the state of the environment should not have.
+        
+        :parameter entry: Entry names that the state of the environment should not have.
+        
         :return: None.
         """
         if isinstance(entry, str):
@@ -502,7 +558,9 @@ class Model:
     def pop_state_values(self, index):
         """
         Remove entries from the state by its index. If selected index is not available in the state, it will be ignored.
-        :param index: Entry index that the state of the environment should not have.
+        
+        :parameter index: Entry index that the state of the environment should not have.
+        
         :return: All entry names that is removed.
         """
         current_state = self.get_current_state_values()
@@ -519,6 +577,7 @@ class Model:
     def get_possible_state_entries(self):
         """
         Get all available state entries. This list of entries only depends on the building architecture.
+        
         :return: List of available state entry names.
         """
 
@@ -529,6 +588,7 @@ class Model:
     def get_possible_actions(self):
         """
         Get all available actions that the user-defined agent can take. This list of actions only depends on the building architecture.
+        
         :return: List of available actions in dictionaries.
         """
         if not os.path.isfile("./result/eplusout.edd"):
@@ -557,6 +617,7 @@ class Model:
     def get_link_zones(self):
         """
         Generate a graph that shows the connectivity of zones of the current building.
+        
         :return: A bi-directional graph represented by a dictionary where the key is the source zone name and the value is a set of all neighbor zone name.
         """
         link_zones = {"Outdoor": set()}

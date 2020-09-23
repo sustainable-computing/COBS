@@ -22,8 +22,9 @@ class OccupancyGenerator:
         Customer service time: average 30 minutes each.
         Average number of guests per day: 3.
         
-        :param model: The `COBS.Model' class object as the target building model.
-        :param num_occupant: The number of long-term occupants belongs to the model.
+        :parameter model: The ``COBS.Model`` class object as the target building model.
+        
+        :parameter num_occupant: The number of long-term occupants belongs to the model.
         """
         self.start_work = 9 * 60 * 60  # Work start from 9:00. unit: second
         self.end_work = 17 * 60 * 60  # Work end at 17:00. unit: second
@@ -70,8 +71,10 @@ class OccupancyGenerator:
         """
         Use BFS to find the shortest path between two zones.
 
-        :param start: The entry of the start zone.
-        :param end: The entry of the target zone.
+        :parameter start: The entry of the start zone.
+
+        :parameter end: The entry of the target zone.
+
         :return: A list of zone names that the occupant need to cross.
         """
         queue = [(start, [start])]
@@ -91,8 +94,9 @@ class OccupancyGenerator:
 
     def generate_all_people_daily_movement(self):
         """
-        Generate a list of `Person' objects and simulate the movement for each person.
-        :return: list of `Person' objects.
+        Generate a list of ``Person`` objects and simulate the movement for each person.
+        
+        :return: list of ``Person`` objects.
         """
         available_worker = list()
         for i, worker in enumerate(self.worker_assign):
@@ -123,7 +127,9 @@ class OccupancyGenerator:
     def generate_daily_schedule(self, add_to_model=True):
         """
         Generate a numpy matrix contains the locations of all occupants in the day and add tp the model.
-        :param add_to_model: Default is True. If False, then only generate the schedule in numpy and IDF format but not save to the model automatically.
+        
+        :parameter add_to_model: Default is True. If False, then only generate the schedule in numpy and IDF format but not save to the model automatically.
+        
         :return: Three objects, (IDF format schedule, numpy format schedule, list of all accessble locations in the building).
         """
         all_zones = self.model.get_available_names_under_group("Zone")
@@ -230,8 +236,10 @@ class Person:
     def __init__(self, generator, office=None):
         """
         Each long-term occupant will have an office, and he tend to stay in office more than other places.
-        :param generator: The OccupancyGenerator which provides the settings.
-        :param office: The designated office for long-term occupants.
+        
+        :parameter generator: The OccupancyGenerator which provides the settings.
+        
+        :parameter office: The designated office for long-term occupants.
         """
         self.office = office
         self.position = np.zeros(generator.day_cut_off)
@@ -240,9 +248,13 @@ class Person:
     def customer_come(self, start_time, end_time, dest):
         """
         Simulate the event of customers coming for the current occupant.
-        :param start_time: The scheduled appointment start time (not the real start time).
-        :param end_time: The scheduled appointment end time (not the real end time).
-        :param dest: The appointment location (zone entry).
+        
+        :parameter start_time: The scheduled appointment start time (not the real start time).
+        
+        :parameter end_time: The scheduled appointment end time (not the real end time).
+        
+        :parameter dest: The appointment location (zone entry).
+        
         :return: None
         """
         pass_zones = self.source.get_path(self.source.entry_zone, dest)
@@ -274,6 +286,7 @@ class Person:
         mu = 30 minute. Use exponential distribution because people tend to come/leave on time with a very small
         chance of being late. In the meantime, assume that people directly goes into their own office right away.
         They require some time to walk to their office.
+        
         :return: True if come to work, False otherwise
         """
         self.position = np.zeros(self.source.day_cut_off)
@@ -317,6 +330,7 @@ class Person:
     def generate_lunch(self):
         """
         Generate the time that current occupant go to the cafeteria and take the lunch.
+        
         :return: None
         """
         # Usually go for lunch immediately, with average delay of 5 minute
@@ -349,6 +363,7 @@ class Person:
     def generate_daily_meeting(self):
         """
         Generate the time that current occupant go to the daily meeting.
+        
         :return: None
         """
         # Arrive maximum 3 min early, 2 min late
@@ -381,8 +396,11 @@ class Person:
     def check_in_office(self, start, end):
         """
         Determine if the occupant is in his/her office or not during a given period of time.
-        :param start: The start time.
-        :param end: The end time.
+        
+        :parameter start: The start time.
+        
+        :parameter end: The end time.
+        
         :return: Return True if the occupant is in his/her office between given time, and False otherwise.
         """
         return np.sum(self.position[start:end] == self.source.possible_locations.index(self.office)) == (end - start)
@@ -404,7 +422,9 @@ class Person:
     def handle_customer(self, num_customer):
         """
         Set up an appointment for occupant with some new customers.
-        :param num_customer: Number of customers in total today will come.
+        
+        :parameter num_customer: Number of customers in total today will come.
+        
         :return: tuple of (appointment start time, appointment end time, appointment location).
         """
         # Set-up meeting time
@@ -436,6 +456,7 @@ class Person:
     def generate_go_other_office(self):
         """
         Generate the event of visiting colleagues' office for random talk. Only possible if the colleague is in the office.
+        
         :return: None.
         """
         for _ in range(np.random.poisson(self.source.visit_colleague)):
@@ -464,7 +485,9 @@ class Person:
     def generate_daily_route(self, customer_list):
         """
         Generate the whole day locations for the occupant.
-        :param customer_list: List of Person that will visit the occupant today.
+        
+        :parameter customer_list: List of Person that will visit the occupant today.
+        
         :return: List of appointment times.
         """
         time_list = list()
@@ -478,7 +501,9 @@ class Person:
     def get_position(self, sec):
         """
         Get the location of the occupant at the given time
-        :param sec: The time that need to check.
+        
+        :parameter sec: The time that need to check.
+        
         :return: The zone entry of the location at the given time.
         """
         if self.position[sec] == self.source.possible_locations.index("busy"):
@@ -492,7 +517,9 @@ class Person:
 def get_white_bias(second):
     """
     Generate a bias.
-    :param second: Value range.
+    
+    :parameter second: Value range.
+    
     :return: Bias.
     """
     return np.random.randint(second * 2 + 1) - second
