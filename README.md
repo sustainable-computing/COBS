@@ -1,17 +1,17 @@
 # COBS: COmprehensive Building Simulator (Early access v0.1)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](#)[![License](http://img.shields.io/badge/license-MIT-green.svg?style=flat)](https://github.com/sustainable-computing/COBS/blob/master/LICENSE)
 
-COBS is an open-source, modular co-simulation platform for developing and comparing building control algorithms. It integrates various simulators and agent models with EnergyPlus, and supports fine-grained and occupant-centric control of building subsystems. COBS provides the ability to access the state after each simulation step in EnergyPlus and to use its value to determine the control action for the next time step(s). The interface is designed similar to OpenAI Gym so that the environments written for Gym can be easily used with the simulator.
+COBS is an open-source, modular co-simulation platform for developing and comparing building control algorithms. It integrates various simulators and agent models with EnergyPlus and supports fine-grained and occupant-centric control of building subsystems. COBS provides the ability to access the state after each simulation step in EnergyPlus and to use its value to determine the control action for the next time step(s). The interface is designed similar to OpenAI Gym so that the environments written for Gym can be easily used with the simulator.
 
 COBS is licensed under [MIT](https://github.com/sustainable-computing/COBS/blob/master/LICENSE).
 
-This paltform is developed by Tianyu Zhang (tzhang6@ualberta.ca). We acknowledge the contribution of Gaby Baasch <gaby.baasch@gmail.com> who wrote several control agents and contributed code to this platform.
+This platform is developed by Tianyu Zhang (tzhang6@ualberta.ca). We acknowledge the contribution of Gaby Baasch <gaby.baasch@gmail.com>, who wrote several control agents and contributed code to this platform.
 
 ## Contributing
-We welcome contributions in different forms from bug reports to pull requests. We encourage the community to use, improve, and extend COBS by adding new occupancy and building models, and sharing the implementation of control algorithms. For major changes, please open an issue to discuss how you would like to change the platform.
+We welcome contributions in different forms, from bug reports to pull requests. We encourage the community to use, improve, and extend COBS by adding new occupancy and building models and sharing the implementation of control algorithms. For major changes, please open an issue to discuss how you would like to change the platform.
 
 ## Documentation
 Documentation is available at https://cobs-platform.github.io
 
 ## Dependencies
-Visit this [page](https://cobs-platform.github.io/dependencies.html) for the full list of dependecies.
+Visit this [page](https://cobs-platform.github.io/dependencies.html) for the full list of dependencies.
