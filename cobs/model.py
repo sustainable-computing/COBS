@@ -1,6 +1,6 @@
 import sys
 
-from eventqueue import EventQueue
+from cobs import EventQueue, ReplayBuffer
 from eppy.modeleditor import IDF
 from eppy.bunch_subclass import BadEPFieldError
 # from pyenergyplus.api import EnergyPlusAPI
@@ -9,8 +9,7 @@ import matplotlib.pyplot as plt
 import os
 import time
 from datetime import datetime, timedelta
-from state_modifier import StateModifier
-from ReplayBuffer import ReplayBuffer
+from cobs.state_modifier import StateModifier
 
 
 class Agent:

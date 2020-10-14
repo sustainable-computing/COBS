@@ -15,3 +15,7 @@ Documentation is available at https://cobs-platform.github.io
 
 ## Dependencies
 Visit this [page](https://cobs-platform.github.io/dependencies.html) for the full list of dependencies.
+
+## Acknowledgement
++ Building models (`./cobs/data/buildings/*`): The Pacific Northwest National Laboratory (PNNL)
++ Weather data (`./cobs/data/weathers/*`): The Pacific Northwest National Laboratory (PNNL)
