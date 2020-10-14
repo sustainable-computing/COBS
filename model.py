@@ -372,6 +372,8 @@ class Model:
             current_state["occupancy"] = {zone: value[self.counter] for zone, value in self.occupancy.items()}
         for name in self.zone_names:
             handle = self.api.exchange.get_variable_handle("Zone Air Temperature", name)
+            if handle == -1:
+                continue
             # print("Child: Simulating 2")
             current_state["temperature"][name] = self.api.exchange.get_variable_value(handle)
         handle = self.api.exchange.get_meter_handle("Heating:EnergyTransfer")
