@@ -21,8 +21,8 @@ if mode == 1:
             print(f"Timestep: {timestep}, State values: {state}")
 
 
-    model = Model(idf_file_name="./buildings/5ZoneAirCooled.idf",
-                  weather_file="./weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",
+    model = Model(idf_file_name="../buildings/5ZoneAirCooled.idf",
+                  weather_file="../weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",
                   agent=Agent())
     model.simulate()
     print("Done")
@@ -32,8 +32,8 @@ if mode == 1:
 #             Sample dummy agent 2 using a OpenAI Gym interface
 # --------------------------------------------------------------------------
 elif mode == 2:
-    model = Model(idf_file_name="./buildings/5ZoneAirCooled.idf",
-                  weather_file="./weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw")
+    model = Model(idf_file_name="../buildings/5ZoneAirCooled.idf",
+                  weather_file="../weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw")
     state = model.reset()
     while not model.is_terminate():
         print(state)

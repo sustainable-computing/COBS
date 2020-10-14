@@ -5,12 +5,26 @@ from eppy.modeleditor import IDF
 from eppy.bunch_subclass import BadEPFieldError
 # from pyenergyplus.api import EnergyPlusAPI
 from multiprocessing import Event, Pipe, Process
+import matplotlib.pyplot as plt
 import os
+import time
+from datetime import datetime, timedelta
+from state_modifier import StateModifier
+from ReplayBuffer import ReplayBuffer
 
 
 class Agent:
     """
     Dummy agent as a placeholder. No meaning
+    """
+
+    def __init__(self):
+        pass
+
+
+class Reward:
+    """
+    Dummy reward as a placeholder. No meaning
     """
 
     def __init__(self):
@@ -44,30 +58,36 @@ class Model:
                  weather_file: str = None,
                  heating_type: str = None,
                  foundation_type: str = None,
-                 agent: Agent = None
-                 ):
+                 agent: Agent = None,
+                 reward=None,
+                 eplus_naming_dict=None,
+                 eplus_var_types=None,
+                 buffer_capacity=None,
+                 buffer_seed=None,
+                 buffer_chkpt_dir=None):
         """
         Initialize the building by loading the IDF file to the model.
 
         :parameter idf_file_name: The relative path to the IDF file. Use it if you want to use your own model.
-
         :parameter prototype: Either "multi" and "single", indicates the Multi-family low-rise apartment building and Single-family detached house.
-        
         :parameter climate_zone: The climate zone code of the building. Please refer to https://codes.iccsafe.org/content/iecc2018/chapter-3-ce-general-requirements.
-        
         :parameter weather_file: The relative path to the weather file associate with the building.
-        
         :parameter heating_type: Select one from "electric", "gas", "oil", and "pump"
-        
         :parameter foundation_type: Select one from "crawspace", "heated", "slab", and "unheated"
-        
         :parameter agent: The user-defined Agent class object if the agent is implemented in a class.
+        :parameter reward: The user-defined reward class object that contains a reward(state, actions) method.
+        :parameter eplus_naming_dict: A dictionary map the state variable name to some specified names.
+        :parameter eplus_var_types: A dictionary contains the state name and the state source location.
+        :parameter buffer_capacity: The maximum number of historical state, action, new_state pair store in the buffer.
+        :parameter buffer_seed: The random seed when sample from the buffer.
+        :parameter buffer_chkpt_dir: The location of the buffer checkpoint should save.
         """
         if not Model.model_import_flag:
             raise ImportError("You have to set the energyplus folder first")
         self.api = None
         self.current_state = dict()
         self.idf = None
+        self.occupancy = None
         self.run_parameters = None
         self.queue = EventQueue()
         self.agent = agent
@@ -75,7 +95,7 @@ class Model:
         self.zone_names = None
         self.thermal_names = None
         self.counter = 0
-        self.historical_values = list()
+        self.replay = ReplayBuffer(buffer_capacity, buffer_seed, buffer_chkpt_dir)
         self.warmup_complete = False
         self.terminate = False
         self.wait_for_step = Event()
@@ -83,6 +103,11 @@ class Model:
         self.parent, self.child_energy = Pipe(duplex=True)
         self.child = None
         self.use_lock = False
+        self.reward = reward
+        self.eplus_naming_dict = eplus_naming_dict
+        self.eplus_var_types = eplus_var_types
+        self.prev_reward = None
+        self.state_modifier = StateModifier()
 
         # TODO: Validate input parameters
 
@@ -115,7 +140,7 @@ class Model:
     def list_all_available_configurations(self):
         """
         Generate a list of all type of components appeared in the current building.
-        
+
         :return: list of components entry.
         """
         return list(self.idf.idfobjects.keys())
@@ -132,9 +157,9 @@ class Model:
                               idf_header_name: str):
         """
         Show all available settings for the given type of component.
-        
+
         :parameter idf_header_name: The type of the component.
-        
+
         :return: List of settings entry.
         """
         if not self.idf.idfobjects.get(idf_header_name):
@@ -145,7 +170,7 @@ class Model:
                                         idf_header_name: str):
         """
         Given the type of components, find all available components in the building by their entry.
-        
+
         :parameter idf_header_name: The type of the component.
 
         :return: List of names.
@@ -164,11 +189,11 @@ class Model:
                           component_name: str = None):
         """
         Given the type of component, the entry of the target component, find the settings of that component.
-        
+
         :parameter idf_header_name: The type of the component.
-        
+
         :parameter component_name: The entry of the component.
-        
+
         :return: Settings of this component.
         """
         if component_name is None:
@@ -186,13 +211,13 @@ class Model:
                         validate: bool = False):
         """
         Get the range of acceptable values of the specific setting.
-        
+
         :parameter idf_header_name: The type of the component.
-        
+
         :parameter field_name: The setting entry.
-        
+
         :parameter validate: Set to True to check the current value is valid or not.
-        
+
         :return: Validation result or the range of all acceptable values retrieved from the IDD file.
         """
         field_name = field_name.replace(' ', '_')
@@ -208,11 +233,11 @@ class Model:
                           values: dict = None):
         """
         Create and add a new component into the building model with the specific type and setting values.
-        
+
         :parameter idf_header_name: The type of the component.
-        
+
         :parameter values: A dictionary map the setting entry and the setting value.
-        
+
         :return: The new component.
         """
         object = self.idf.newidfobject(idf_header_name.upper())
@@ -231,11 +256,11 @@ class Model:
                              component_name: str = None):
         """
         Delete an existing component from the building model.
-        
+
         :parameter idf_header_name: The type of the component.
-        
+
         :parameter component_name: The entry of the component.
-        
+
         :return: None.
         """
         if not self.idf.idfobjects.get(idf_header_name):
@@ -256,13 +281,13 @@ class Model:
                            update_values: dict):
         """
         Edit an existing component in the building model.
-        
+
         :parameter idf_header_name: The type of the component.
-        
+
         :parameter identifier: A dictionary map the setting entry and the setting value to locate the target component.
-        
+
         :parameter update_values: A dictionary map the setting entry and the setting value that needs to update.
-        
+
         :return: None.
         """
         if not self.idf.idfobjects.get(idf_header_name):
@@ -270,13 +295,13 @@ class Model:
         fields = self.get_sub_configuration(idf_header_name)
         for entry in self.idf.idfobjects[idf_header_name]:
             valid = True
-            for key, value in identifier:
+            for key, value in identifier.items():
                 key = Model.name_reformat(key)
                 if key in fields:
                     if entry[key] != value:
                         valid = False
             if valid:
-                for key, value in update_values:
+                for key, value in update_values.items():
                     key = Model.name_reformat(key)
                     if isinstance(value, (int, float)):
                         exec(f"entry.{key} = {value}")
@@ -286,7 +311,7 @@ class Model:
     def _get_thermal_names(self):
         """
         Initialize all available thermal zones.
-        
+
         :return: None
         """
         people_zones = self.get_configuration("People")
@@ -302,9 +327,9 @@ class Model:
                       path: str):
         """
         Save the modified building model for EnergyPlus simulation
-        
+
         :parameter path: The relative path to the modified IDF file.
-        
+
         :return: None.
         """
         self.idf.saveas(path)
@@ -312,7 +337,7 @@ class Model:
     def _initialization(self):
         """
         Initialize the EnergyPlus simulation by letting the EnergyPlus finish the warmup.
-        
+
         :return: None
         """
         if not self.api.exchange.api_data_fully_ready():
@@ -322,7 +347,7 @@ class Model:
     def _generate_output_files(self):
         """
         Assert errors to terminate the simulation after the warmup in order to generate the EDD file to list all available actions for the current building.
-        
+
         :return: None
         """
         assert False
@@ -331,25 +356,58 @@ class Model:
         """
         Get the state value at each timestep, and modify the building model based on the actions from the ``EventQueue``.
         :return: None
-        
+
         """
+        # print("Child: Not ready")
         if not self.api.exchange.api_data_fully_ready() or not self.warmup_complete:
             return
         current_state = dict()
         # print("Child: Simulating")
+        current_state["timestep"] = self.counter
+        # print(self.get_date())
+        current_state["time"] = self.get_date()
         current_state["temperature"] = dict()
         current_state["occupancy"] = dict()
+        if self.occupancy is not None:
+            current_state["occupancy"] = {zone: value[self.counter] for zone, value in self.occupancy.items()}
         for name in self.zone_names:
             handle = self.api.exchange.get_variable_handle("Zone Air Temperature", name)
+            # print("Child: Simulating 2")
             current_state["temperature"][name] = self.api.exchange.get_variable_value(handle)
         handle = self.api.exchange.get_meter_handle("Heating:EnergyTransfer")
         current_state["energy"] = self.api.exchange.get_meter_value(handle)
+        if self.reward is not None:
+            current_state["reward"] = self.prev_reward
+
+        # print("Child: Simulating 1")
 
         if "Zone Thermal Comfort Fanger Model PMV" in self.get_available_names_under_group("Output:Variable"):
             current_state["PMV"] = dict()
             for zone in self.thermal_names:
                 handle = self.api.exchange.get_variable_handle("Zone Thermal Comfort Fanger Model PMV", zone)
-                current_state["PMV"][zone] = self.api.exchange.get_variable_value(handle)
+                current_state["PMV"][self.thermal_names[zone]] = self.api.exchange.get_variable_value(handle)
+
+        # Add for temp extra output
+        if self.eplus_naming_dict is not None:
+            for entry in self.idf.idfobjects['OUTPUT:VARIABLE']:
+                # we only care about the output vars for Gnu-RL
+                if (entry['Variable_Name'], entry['Key_Value']) in self.eplus_naming_dict.keys():
+                    var_name = entry['Variable_Name']
+
+                    # if the key value is not associated with a zone return None for variable handler
+                    # key_val = entry['Key_Value'] if entry['Key_Value'] != '*' else None
+                    if entry['Key_Value'] == '*':
+                        key_val = self.eplus_var_types[var_name]
+                    else:
+                        key_val = entry['Key_Value']
+                    handle = self.api.exchange.get_variable_handle(var_name, key_val)
+                    # name the state value based on Gnu-RL paper
+                    key = self.eplus_naming_dict.get((var_name, entry['Key_Value']))
+                    current_state[key] = self.api.exchange.get_variable_value(handle)
+
+        self.state_modifier.get_update_states(current_state, self)
+        # current_state.update(update_dict)
+        # print(current_state)
 
         if self.use_lock:
             # print("Child: Sending current states")
@@ -363,12 +421,25 @@ class Model:
             # print("Child: Receiving actions")
             events = self.child_energy.recv()
         else:
+            # print(self.current_state)
+            if self.counter != 0:
+                self.replay.push(self.current_state,
+                                 self.queue.get_event(self.current_state["timestep"]),
+                                 current_state)
             self.current_state = current_state
-            self.historical_values.append(self.current_state)
+            # self.historical_values.append(self.current_state)
             events = self.queue.trigger(self.counter)
-            self.counter += 1
+        self.counter += 1
 
+        # Trigger modifiers
+        # for modifier in self.modifier:
+        #     modifier.update(current_state)
         # print("Child: executing actions")
+
+        # print("Child: Printing Reward")
+        # Calculate Reward
+        if self.reward is not None:
+            self.prev_reward = self.reward.reward(current_state, events)
 
         # Trigger events
         for key in events["actuator"]:
@@ -390,7 +461,7 @@ class Model:
         if not self.use_lock and self.agent:
             self.agent.step(self.current_state, self.queue, self.counter - 1)
 
-    def step(self, action_list: list):
+    def step(self, action_list=None):
         """
         Add all actions into the ``EventQueue``, and then generate the state value of the next timestep.
 
@@ -413,12 +484,16 @@ class Model:
             self.wait_for_state.wait()
         self.wait_for_state.clear()
         current_state = self.parent.recv()
-        if current_state != "Terminated":
+        if isinstance(current_state, dict):
+            self.replay.push(self.current_state,
+                             self.queue.get_event(self.current_state["timestep"]),
+                             current_state)
             self.current_state = current_state
-            self.historical_values.append(self.current_state)
+            # self.historical_values.append(self.current_state)
         else:
             self.terminate = True
             self.child.join()
+            self.replay.terminate()
         self.wait_for_state.clear()
         # print("Parent: received state values")
         return self.current_state
@@ -426,7 +501,7 @@ class Model:
     def is_terminate(self):
         """
         Determine if the simulation is finished or not.
-        
+
         :return: True if the simulation is done, and False otherwise.
         """
         return self.terminate
@@ -434,12 +509,12 @@ class Model:
     def reset(self):
         """
         Clear the actions and buffer, reset the environment and start the simulation.
-        
+
         :return: The initial state of the simulation.
         """
         self._init_simulation()
         self.queue = EventQueue()
-        self.historical_values = list()
+        self.replay.reset()
         self.ignore_list = set()
         self.wait_for_state.clear()
         self.wait_for_step.clear()
@@ -448,22 +523,25 @@ class Model:
         self.parent, self.child_energy = Pipe(duplex=True)
         self.child = Process(target=self.simulate)
         self.child.start()
-        self.wait_for_state.wait()
+        # print("Waiting")
+        if not self.parent.poll():
+            self.wait_for_state.wait()
         self.current_state = self.parent.recv()
-        self.historical_values.append(self.current_state)
+        # self.historical_values.append(self.current_state)
         self.wait_for_state.clear()
         return self.current_state
 
     def simulate(self, terminate_after_warmup=False):
         """
         Run the whole simulation once. If user use this method instead of the reset function, the user need to provide the Agent.
-        
+
         :parameter terminate_after_warmup: True if the simulation should terminate after the warmup.
-        
+
         :return: None.
         """
         from pyenergyplus.api import EnergyPlusAPI
 
+        self.replay.set_ignore(self.state_modifier.get_ignore_by_checkpoint())
         if not self.use_lock:
             self._init_simulation()
         # for entry in self.zone_names:
@@ -482,11 +560,13 @@ class Model:
         if self.use_lock:
             self.child_energy.send("Terminated")
             self.wait_for_state.set()
+        else:
+            self.replay.terminate()
 
     def _init_simulation(self):
         """
         Save the modified building model and initialize the zones for states.
-        
+
         :return: None.
         """
         self.idf.saveas("input.idf")
@@ -498,7 +578,7 @@ class Model:
     def get_current_state_values(self):
         """
         Find the current entries in the state.
-        
+
         :return: List of entry names that is currently available in the state.
         """
         state_values = list(set(self.get_possible_state_entries()) - self.ignore_list)
@@ -508,11 +588,11 @@ class Model:
     def select_state_values(self, entry=None, index=None):
         """
         Select interested state entries. If selected entry is not available for the current building, it will be ignored.
-        
+
         :parameter entry: Entry names that the state of the environment should have.
-        
+
         :parameter index: Index of all available entries that the state of the environment should have.
-        
+
         :return: None.
         """
         current_state = self.get_current_state_values()
@@ -531,9 +611,9 @@ class Model:
     def add_state_values(self, entry):
         """
         Add entries to the state. If selected entry is not available for the current building, it will be ignored.
-        
+
         :parameter entry: Entry names that the state of the environment should have.
-        
+
         :return: None.
         """
         if not self.ignore_list:
@@ -546,9 +626,9 @@ class Model:
     def remove_state_values(self, entry):
         """
         Remove entries from the state. If selected entry is not available in the state, it will be ignored.
-        
+
         :parameter entry: Entry names that the state of the environment should not have.
-        
+
         :return: None.
         """
         if isinstance(entry, str):
@@ -558,9 +638,9 @@ class Model:
     def pop_state_values(self, index):
         """
         Remove entries from the state by its index. If selected index is not available in the state, it will be ignored.
-        
+
         :parameter index: Entry index that the state of the environment should not have.
-        
+
         :return: All entry names that is removed.
         """
         current_state = self.get_current_state_values()
@@ -577,7 +657,7 @@ class Model:
     def get_possible_state_entries(self):
         """
         Get all available state entries. This list of entries only depends on the building architecture.
-        
+
         :return: List of available state entry names.
         """
 
@@ -588,7 +668,7 @@ class Model:
     def get_possible_actions(self):
         """
         Get all available actions that the user-defined agent can take. This list of actions only depends on the building architecture.
-        
+
         :return: List of available actions in dictionaries.
         """
         if not os.path.isfile("./result/eplusout.edd"):
@@ -617,7 +697,7 @@ class Model:
     def get_link_zones(self):
         """
         Generate a graph that shows the connectivity of zones of the current building.
-        
+
         :return: A bi-directional graph represented by a dictionary where the key is the source zone name and the value is a set of all neighbor zone name.
         """
         link_zones = {"Outdoor": set()}
@@ -640,3 +720,198 @@ class Model:
                 link_zones[wall.Zone_Name].add(wall_to_zone[wall.Outside_Boundary_Condition_Object])
 
         return link_zones
+
+    def get_date(self):
+        """
+        Get the current time in the simulation environment.
+        :return: None
+        """
+        year = self.api.exchange.year()
+        month = self.api.exchange.month()
+        day = self.api.exchange.day_of_month()
+        hour = self.api.exchange.hour()
+        minute = self.api.exchange.minutes()
+        current_time = datetime(year, month, day, hour) + timedelta(minutes=minute)
+        return current_time
+
+    def get_windows(self):
+        """
+        Get the zone-window matching dictionary based on the IDF file.
+        :return: A dictionary where key is the zone name, and the value is a set of window available in the zone.
+        """
+        zone_window = {name: set() for name in self.get_available_names_under_group("Zone")}
+        all_window = dict()
+        for window in self.get_configuration("FenestrationSurface:Detailed"):
+            if window.Surface_Type != "WINDOW":
+                continue
+            all_window[window.Building_Surface_Name] = window.Name
+
+        for wall in self.get_configuration("BuildingSurface:Detailed"):
+            if wall.Surface_Type != "WALL":
+                continue
+            if wall.Name in all_window:
+                zone_window[wall.Zone_Name].add(all_window[wall.Name])
+        return zone_window
+
+    def get_doors(self):
+        """
+        Get the zone-door matching dictionary based on the IDF file.
+        :return: A dictionary where key is the zone name, and the value is a set of door available in the zone.
+        """
+        zone_door = {name: set() for name in self.get_available_names_under_group("Zone")}
+        all_door = dict()
+        for door in self.get_configuration("FenestrationSurface:Detailed"):
+            if door.Surface_Type != "GLASSDOOR":
+                continue
+            all_door[door.Building_Surface_Name] = door.Name
+
+        for wall in self.get_configuration("BuildingSurface:Detailed"):
+            if wall.Surface_Type != "WALL":
+                continue
+            if wall.Name in all_door:
+                zone_door[wall.Zone_Name].add(all_door[wall.Name])
+        return zone_door
+
+    def get_lights(self):
+        """
+        Get the zone-light matching dictionary based on the IDF file.
+        :return: A dictionary where key is the zone name, and the value is a set of light available in the zone.
+        """
+        zone_light = {name: set() for name in self.get_available_names_under_group("Zone")}
+        for light in self.get_configuration("Lights"):
+            zone_light[light.Zone_or_ZoneList_Name].add(light.Name)
+        return zone_light
+
+    def get_blinds(self):
+        """
+        Get the zone-blind matching dictionary based on the IDF file.
+        :return: A dictionary where key is the zone name, and the value is a set of blind available in the zone.
+        """
+        window_with_blinds = set()
+        for shade in self.get_configuration("WindowShadingControl"):
+            window_with_blinds.add(shade.Fenestration_Surface_1_Name)
+
+        zone_blinds = self.get_windows()
+        for zone in zone_blinds:
+            zone_blinds[zone] = zone_blinds[zone].intersection(window_with_blinds)
+
+        return zone_blinds
+
+    def set_blinds(self, windows):
+        """
+        Install blinds that can be controlled on some given windows.
+        :param windows: An iterable object that includes all windows that plan to install the blind.
+        :return: None
+        """
+        zone_window = self.get_windows()
+        for zone in zone_window:
+            for window in zone_window[zone]:
+                if window in windows:
+                    window_idf = self.get_configuration("FenestrationSurface:Detailed", window)
+                    blind = {"Name": f"{window}_blind",
+                             "Slat Orientation": "Horizontal",
+                             "Slat Width": 0.1,
+                             "Slat Separation": 0.1,
+                             "Front Side Slat Beam Solar Reflectance": 0.8,
+                             "Back Side Slat Beam Solar Reflectance": 0.8,
+                             "Front Side Slat Diffuse Solar Reflectance": 0.8,
+                             "Back Side Slat Diffuse Solar Reflectance": 0.8,
+                             "Slat Beam Visible Transmittance": 0.0}
+                    shading = {"Name": f"{window}_blind_shading",
+                               "Zone Name": zone,
+                               "Shading Type": "InteriorBlind",
+                               "Shading Device Material Name": f"{window}_blind",
+                               "Shading Control Type": "AlwaysOn",
+                               "Fenestration Surface 1 Name": window_idf.Name}
+                    self.add_configuration("WindowMaterial:Blind", values=blind)
+                    self.add_configuration("WindowShadingControl", values=shading)
+
+    def set_occupancy(self, occupancy, locations):
+        """
+        Include the occupancy schedule generated by the OccupancyGenerator to the model as the occupancy data in
+        EnergyPlus simulated environment is broken.
+        :param occupancy: Numpy matrix contains the number of occupanct in each zone at each time slot.
+        :param locations: List of zone names.
+        :return: None
+        """
+        occupancy = occupancy.astype(int)
+        self.occupancy = {locations[i]: occupancy[i, :] for i in range(len(locations))}
+        if "Outdoor" in self.occupancy.keys():
+            self.occupancy.pop("Outdoor")
+        if "busy" in self.occupancy.keys():
+            self.occupancy.pop("busy")
+
+    def set_runperiod(self,
+                      days,
+                      start_year: int = 2000,
+                      start_month: int = 1,
+                      start_day: int = 1,
+                      specify_year: bool = False):
+        """
+        Set the simulation run period.
+        :param days: How many days in total the simulation should perform.
+        :param start_year: Start from which year
+        :param start_month: Start from which month of the year
+        :param start_day: Start from which day of the month
+        :param specify_year: Use default year or a specific year when simulation is within a year.
+        :return: None
+        """
+        end = datetime(start_year, start_month, start_day) + timedelta(days=days - 1)
+        values = {"Begin Month": start_month,
+                  "Begin Day of Month": start_day,
+                  "End Month": end.month,
+                  "End Day of Month": end.day}
+        if end.year != start_year or specify_year:
+            values.update({"Begin Year": start_year,
+                           "End Year": end.year})
+        name = self.get_configuration("RunPeriod")[0].Name
+        self.edit_configuration("RunPeriod", {"Name": name}, values)
+
+    def set_timestep(self, timestep_per_hour):
+        """
+        Set the timestep per hour for the simulation.
+        :param timestep_per_hour: How many timesteps within a hour.
+        :return: None
+        """
+        self.get_configuration("Timestep")[0].Number_of_Timesteps_per_Hour = timestep_per_hour
+
+    def add_state_modifier(self, model):
+        """
+        Add a state modifier model, including predictive model, state estimator, controller, etc.
+        :param model: A class object that follows the template (contains step(true_state, environment) method).
+        :return: None
+        """
+        self.state_modifier.add_model(model)
+
+    def flatten_state(self, order, state=None):
+        """
+        Flatten the state to a list of values by a given order.
+        :param order: The order that the values should follow.
+        :param state: The state to flatten. If not specified, then the current state is selected.
+        :return: List of values follows the given order.
+        """
+        if state is None:
+            state = self.current_state
+        return [self.current_state.get(name, None) for name in order]
+
+    def sample_buffer(self, batch_size):
+        """
+        Sample a batch of experience from the replay buffer.
+        :param batch_size: Number of entries in a batch.
+        :return: (state, action, next state, is terminate)
+        """
+        return self.replay.sample(batch_size)
+
+    def sample_flattened_buffer(self, order, batch_size):
+        """
+        Sample a batch of experience from the replay buffer and flatten the states by a given order.
+        :param order: The order that the values should follow.
+        :param batch_size: Number of entries in a batch.
+        :return: (state, action, next state, is terminate) where states are flatten.
+        """
+        state, action, next_state, done = self.replay.sample(batch_size)
+        for i, row in state:
+            state[i] = self.flatten_state(order, row)
+        for i, row in next_state:
+            next_state[i] = self.flatten_state(order, row)
+        return state, action, next_state, done

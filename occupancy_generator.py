@@ -227,6 +227,29 @@ class OccupancyGenerator:
 
         return all_commands, location_matrix, zone_occupancy, self.possible_locations
 
+    def save_light_config(self, output_name=None):
+        if self.light_config is None:
+            self.initialize_light_config()
+        if output_name is None:
+            output_name = "light_config.json"
+        with open(output_name, 'w') as output_file:
+            json.dump(self.light_config, output_file)
+
+    def initialize_light_config(self):
+        zone_lights = self.model.get_lights()
+        self.light_config = dict()
+        print(self.model.get_windows())
+        for zone in zone_lights:
+            self.light_config[zone] = list()
+            for light in zone_lights[zone]:
+                self.light_config[zone].append({"name": light,
+                                                "probability": 1,
+                                                "condition": {zone_name: {"occupancy > 0": 1,
+                                                                          "occupancy == 0": 1}
+                                                              for zone_name in self.possible_locations}})
+
+    def generate_light(self, input_name=None):
+        pass
 
 class Person:
     """
