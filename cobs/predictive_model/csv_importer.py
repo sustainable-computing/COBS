@@ -29,9 +29,13 @@ class CsvImporter:
             for name in self.forecasted.columns:
                 true_state[f"{name} {i}"] = value[name]
 
-    def ignore_by_checkpoint(self):
+    def get_output_states(self):
         names = list()
         for i in range(self.planstep):
             for name in self.forecasted.columns:
                 names.append(f"{name} {i}")
         return names
+
+    def ignore_by_checkpoint(self):
+        return self.get_output_states()
+
