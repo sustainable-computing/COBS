@@ -386,6 +386,8 @@ class Model:
             current_state["PMV"] = dict()
             for zone in self.thermal_names:
                 handle = self.api.exchange.get_variable_handle("Zone Thermal Comfort Fanger Model PMV", zone)
+                if handle == -1:
+                    continue
                 current_state["PMV"][self.thermal_names[zone]] = self.api.exchange.get_variable_value(handle)
 
         # Add for temp extra output
@@ -402,6 +404,8 @@ class Model:
                     else:
                         key_val = entry['Key_Value']
                     handle = self.api.exchange.get_variable_handle(var_name, key_val)
+                    if handle == -1:
+                        continue
                     # name the state value based on Gnu-RL paper
                     key = self.eplus_naming_dict.get((var_name, entry['Key_Value']))
                     current_state[key] = self.api.exchange.get_variable_value(handle)
