@@ -3,11 +3,8 @@ import sys
 from cobs import EventQueue, ReplayBuffer
 from eppy.modeleditor import IDF
 from eppy.bunch_subclass import BadEPFieldError
-# from pyenergyplus.api import EnergyPlusAPI
 from multiprocessing import Event, Pipe, Process
-import matplotlib.pyplot as plt
 import os
-import time
 from datetime import datetime, timedelta
 from cobs.state_modifier import StateModifier
 
@@ -106,6 +103,7 @@ class Model:
         self.eplus_naming_dict = eplus_naming_dict
         self.eplus_var_types = eplus_var_types
         self.prev_reward = None
+        self.total_timestep = -1
         self.state_modifier = StateModifier()
 
         # TODO: Validate input parameters
@@ -161,6 +159,7 @@ class Model:
 
         :return: List of settings entry.
         """
+        idf_header_name = idf_header_name.upper()
         if not self.idf.idfobjects.get(idf_header_name):
             raise KeyError(f"No {idf_header_name} section in current IDF file")
         return self.idf.idfobjects[idf_header_name][0].fieldnames
@@ -174,6 +173,7 @@ class Model:
 
         :return: List of names.
         """
+        idf_header_name = idf_header_name.upper()
         available_names = self.get_sub_configuration(idf_header_name)
         if "Name" in available_names:
             return [entry["Name"] for entry in self.idf.idfobjects[idf_header_name]]
@@ -195,6 +195,7 @@ class Model:
 
         :return: Settings of this component.
         """
+        idf_header_name = idf_header_name.upper()
         if component_name is None:
             return self.idf.idfobjects[idf_header_name]
         else:
@@ -219,6 +220,7 @@ class Model:
 
         :return: Validation result or the range of all acceptable values retrieved from the IDD file.
         """
+        idf_header_name = idf_header_name.upper()
         field_name = field_name.replace(' ', '_')
         if field_name not in self.get_sub_configuration(idf_header_name):
             raise KeyError(f"Failed to locate {field_name} in {idf_header_name}")
@@ -239,6 +241,7 @@ class Model:
 
         :return: The new component.
         """
+        idf_header_name = idf_header_name.upper()
         object = self.idf.newidfobject(idf_header_name.upper())
         if values is None:
             return object
@@ -262,6 +265,7 @@ class Model:
 
         :return: None.
         """
+        idf_header_name = idf_header_name.upper()
         if not self.idf.idfobjects.get(idf_header_name):
             raise KeyError(f"No {idf_header_name} section in current IDF file")
         if component_name is None:
@@ -289,6 +293,7 @@ class Model:
 
         :return: None.
         """
+        idf_header_name = idf_header_name.upper()
         if not self.idf.idfobjects.get(idf_header_name):
             raise KeyError(f"No {idf_header_name} section in current IDF file")
         fields = self.get_sub_configuration(idf_header_name)
@@ -314,11 +319,11 @@ class Model:
         :return: None
         """
         people_zones = self.get_configuration("People")
-        self.thermal_names = list()
+        self.thermal_names = dict()
         for zone in people_zones:
             try:
                 if zone[Model.name_reformat("Thermal Comfort Model 1 Type")]:
-                    self.thermal_names.append(zone["Name"])
+                    self.thermal_names[zone["Name"]] = zone[Model.name_reformat("Zone or ZoneList Name")]
             except BadEPFieldError:
                 pass
 
@@ -367,6 +372,7 @@ class Model:
         current_state["time"] = self.get_date()
         current_state["temperature"] = dict()
         current_state["occupancy"] = dict()
+        current_state["terminate"] = self.total_timestep == self.counter
         if self.occupancy is not None:
             current_state["occupancy"] = {zone: value[self.counter] for zone, value in self.occupancy.items()}
         for name in self.zone_names:
@@ -430,7 +436,8 @@ class Model:
             if self.counter != 0:
                 self.replay.push(self.current_state,
                                  self.queue.get_event(self.current_state["timestep"]),
-                                 current_state)
+                                 current_state,
+                                 current_state["terminate"])
             self.current_state = current_state
             # self.historical_values.append(self.current_state)
             events = self.queue.trigger(self.counter)
@@ -489,16 +496,19 @@ class Model:
             self.wait_for_state.wait()
         self.wait_for_state.clear()
         current_state = self.parent.recv()
-        if isinstance(current_state, dict):
-            self.replay.push(self.current_state,
-                             self.queue.get_event(self.current_state["timestep"]),
-                             current_state)
-            self.current_state = current_state
-            # self.historical_values.append(self.current_state)
-        else:
+        # if isinstance(current_state, dict):
+        self.replay.push(self.current_state,
+                         self.queue.get_event(self.current_state["timestep"]),
+                         current_state,
+                         current_state["terminate"])
+        self.current_state = current_state
+        # self.historical_values.append(self.current_state)
+        if current_state["terminate"]:
             self.terminate = True
+            self.parent.send(self.queue.trigger(self.counter))
+            self.wait_for_step.set()
             self.child.join()
-            self.replay.terminate()
+            # self.replay.terminate()
         self.wait_for_state.clear()
         # print("Parent: received state values")
         return self.current_state
@@ -518,6 +528,7 @@ class Model:
         :return: The initial state of the simulation.
         """
         self._init_simulation()
+        self.total_timestep = self.get_total_timestep() - 1
         self.queue = EventQueue()
         self.replay.reset()
         self.ignore_list = set()
@@ -535,6 +546,20 @@ class Model:
         # self.historical_values.append(self.current_state)
         self.wait_for_state.clear()
         return self.current_state
+
+    def get_total_timestep(self):
+        run_period = self.get_configuration("RunPeriod")[0]
+        start = datetime(year=run_period.Begin_Year if run_period.Begin_Year else 2000,
+                         month=run_period.Begin_Month,
+                         day=run_period.Begin_Day_of_Month)
+        end = datetime(year=run_period.End_Year if run_period.End_Year else start.year,
+                       month=run_period.End_Month,
+                       day=run_period.End_Day_of_Month)
+        end += timedelta(days=1)
+
+        timestep = self.get_configuration("Timestep")[0].Number_of_Timesteps_per_Hour
+
+        return int((end - start).total_seconds() // 3600 * timestep)
 
     def simulate(self, terminate_after_warmup=False):
         """
@@ -562,11 +587,11 @@ class Model:
         else:
             self.api.runtime.callback_begin_new_environment(self._generate_output_files)
         self.api.runtime.run_energyplus(self.run_parameters)
-        if self.use_lock:
-            self.child_energy.send("Terminated")
-            self.wait_for_state.set()
-        else:
-            self.replay.terminate()
+        # if self.use_lock:
+        #     self.child_energy.send("Terminated")
+        #     self.wait_for_state.set()
+        # else:
+        #     self.replay.terminate()
 
     def _init_simulation(self):
         """

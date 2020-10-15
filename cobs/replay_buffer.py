@@ -18,7 +18,7 @@ class ReplayBuffer:
         self.ignore_set = set()
         self.save_set = set()
 
-    def push(self, prev_state, prev_action, current_state):
+    def push(self, prev_state, prev_action, current_state, done):
         if self.capacity is None or len(self.buffer) < self.capacity:
             self.buffer.append(None)
 
@@ -28,7 +28,7 @@ class ReplayBuffer:
         prev_state = {key: prev_state[key] for key in self.save_set}
         current_state = {key: current_state[key] for key in self.save_set}
 
-        self.buffer[self.position] = (prev_state, prev_action, current_state, False)
+        self.buffer[self.position] = (prev_state, prev_action, current_state, done)
         self.position += 1
         if self.capacity:
             self.position %= self.capacity
