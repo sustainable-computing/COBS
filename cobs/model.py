@@ -60,7 +60,8 @@ class Model:
                  eplus_var_types=None,
                  buffer_capacity=None,
                  buffer_seed=None,
-                 buffer_chkpt_dir=None):
+                 buffer_chkpt_dir=None,
+                 tmp_idf_path=None):
         """
         Initialize the building by loading the IDF file to the model.
 
@@ -113,7 +114,12 @@ class Model:
             if weather_file is None:
                 weather_file = f"./weathers/{climate_zone}.epw"
 
-        self.run_parameters = ["-d", "result", "input.idf"]
+        if tmp_idf_path is None:
+            self.input_idf = "input.idf"
+        else:
+            self.input_idf = os.path.join(tmp_idf_path, "input.idf")
+
+        self.run_parameters = ["-d", "result", self.input_idf]
         if weather_file:
             self.run_parameters = ["-w", weather_file] + self.run_parameters
 
@@ -458,11 +464,15 @@ class Model:
             component_type, control_type, actuator_key = key.split("|*|")
             value = events["actuator"][key][1]
             handle = self.api.exchange.get_actuator_handle(component_type, control_type, actuator_key)
+            if handle == -1:
+                raise ValueError('Actuator handle could not be found: ', component_type, control_type, actuator_key)
             self.api.exchange.set_actuator_value(handle, value)
         for key in events["global"]:
             var_name = key
             value = events["global"][key][1]
             handle = self.api.exchange.get_global_handle(var_name)
+            if handle == -1:
+                raise ValueError('Actuator handle could not be found: ', component_type, control_type, actuator_key)
             self.api.exchange.set_global_value(handle, value)
 
         # if self.use_lock:
@@ -528,6 +538,7 @@ class Model:
         :return: The initial state of the simulation.
         """
         self._init_simulation()
+        self.counter = 0
         self.total_timestep = self.get_total_timestep() - 1
         self.queue = EventQueue()
         self.replay.reset()
@@ -599,7 +610,7 @@ class Model:
 
         :return: None.
         """
-        self.idf.saveas("input.idf")
+        self.idf.saveas(self.input_idf)
         self.use_lock = False
         self.zone_names = self.get_available_names_under_group("Zone")
         self._get_thermal_names()
@@ -827,33 +838,55 @@ class Model:
 
         return zone_blinds
 
-    def set_blinds(self, windows):
+    def set_blinds(self, windows, blind_material_name=None):
         """
         Install blinds that can be controlled on some given windows.
-        :param windows: An iterable object that includes all windows that plan to install the blind.
+        :param windows: An iterable object that includes all windows' name that plan to install the blind.
+        :param blind_material_name: The name of an existing blind in the IDF file  as the blind for all windows.
         :return: None
         """
+        blind_material = None
+        if blind_material_name:
+            try:
+                blind_material = self.get_configuration("WindowMaterial:Blind", blind_material_name)
+            except KeyError:
+                pass
+
         zone_window = self.get_windows()
+
         for zone in zone_window:
             for window in zone_window[zone]:
                 if window in windows:
                     window_idf = self.get_configuration("FenestrationSurface:Detailed", window)
-                    blind = {"Name": f"{window}_blind",
-                             "Slat Orientation": "Horizontal",
-                             "Slat Width": 0.1,
-                             "Slat Separation": 0.1,
-                             "Front Side Slat Beam Solar Reflectance": 0.8,
-                             "Back Side Slat Beam Solar Reflectance": 0.8,
-                             "Front Side Slat Diffuse Solar Reflectance": 0.8,
-                             "Back Side Slat Diffuse Solar Reflectance": 0.8,
-                             "Slat Beam Visible Transmittance": 0.0}
+                    if blind_material is None:
+                        blind = {"Name": f"{window}_blind",
+                                 "Slat Orientation": "Horizontal",
+                                 "Slat Width": 0.025,
+                                 "Slat Separation": 0.01875,
+                                 "Front Side Slat Beam Solar Reflectance": 0.8,
+                                 "Back Side Slat Beam Solar Reflectance": 0.8,
+                                 "Front Side Slat Diffuse Solar Reflectance": 0.8,
+                                 "Back Side Slat Diffuse Solar Reflectance": 0.8,
+                                 "Slat Beam Visible Transmittance": 0.0}
+                        blind_mat = self.add_configuration("WindowMaterial:Blind", values=blind)
+                    else:
+                        blind_mat = self.idf.copyidfobject(blind_material)
+                        blind_mat.Name = blind_mat.Name + f" {window}"
+
                     shading = {"Name": f"{window}_blind_shading",
                                "Zone Name": zone,
                                "Shading Type": "InteriorBlind",
-                               "Shading Device Material Name": f"{window}_blind",
-                               "Shading Control Type": "AlwaysOn",
+                               "Shading Device Material Name": f"{blind_mat.Name}",
+                               "Shading Control Type": "AlwaysOff",
+                               "Setpoint": 50,
+                               "Type of Slat Angle Control for Blinds": "ScheduledSlatAngle",
                                "Fenestration Surface 1 Name": window_idf.Name}
-                    self.add_configuration("WindowMaterial:Blind", values=blind)
+
+                    angle_schedule = {"Name": f"{window}_shading_schedule",
+                                      "Schedule Type Limits Name": "Angle",
+                                      "Hourly Value": 45}
+                    self.add_configuration("Schedule:Constant", values=angle_schedule)
+
                     self.add_configuration("WindowShadingControl", values=shading)
 
     def set_occupancy(self, occupancy, locations):
