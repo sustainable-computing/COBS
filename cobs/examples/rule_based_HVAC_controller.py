@@ -6,18 +6,16 @@ in the next version.
 """
 
 import numpy as np
-from occupancy_generator import OccupancyGenerator as OG
-from model import Model
+from cobs import OccupancyGenerator as OG
+from cobs import Model
 
-Model.set_energyplus_folder("/usr/local/EnergyPlus-9-3-0/")
+Model.set_energyplus_folder("D:\\Software\\EnergyPlus\\")
 
-mode = 2
 
 # --------------------------------------------------------------------------
 #                Sample of rule-based controller using class
 # --------------------------------------------------------------------------
-if mode == 1:
-
+def run_example_1():
     class Agent:
         def __init__(self):
             self.total_reward = dict()
@@ -49,10 +47,9 @@ if mode == 1:
                                             actuator_key=zone)
             self.energy.append(state["energy"])
 
-
     agent = Agent()
-    model = Model(idf_file_name="../buildings/5ZoneAirCooled.idf",
-                  weather_file="../weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",
+    model = Model(idf_file_name="../data/buildings/5ZoneAirCooled.idf",
+                  weather_file="../data/weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",
                   agent=agent)
 
     _, locations, zone_occupancy, names = OG(model).generate_daily_schedule()
@@ -63,13 +60,13 @@ if mode == 1:
     energy = np.sum(agent.energy)
     print(f"Total energy used: {energy}J ({energy / 3600000} kWh)")
 
+
 # --------------------------------------------------------------------------
 #         Sample of rule-based controller using OpenAI Gym interface
 # --------------------------------------------------------------------------
-elif mode == 2:
-
-    model = Model(idf_file_name="../buildings/5ZoneAirCooled.idf",
-                  weather_file="../weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw")
+def run_example_2():
+    model = Model(idf_file_name="../data/buildings/5ZoneAirCooled.idf",
+                  weather_file="../data/weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw")
 
     _, locations, zone_occupancy, zone_names = OG(model).generate_daily_schedule()
 
@@ -106,3 +103,11 @@ elif mode == 2:
 
     energy = np.sum(energy)
     print(f"Total energy used: {energy}J ({energy / 3600000} kWh)")
+
+
+if __name__ == '__main__':
+    mode = 1
+    if mode == 1:
+        run_example_1()
+    else:
+        run_example_2()

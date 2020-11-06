@@ -2,14 +2,14 @@
 This is an example of how to add the occupancy into the model.
 """
 
-from model import Model
+from cobs import Model
 
-Model.set_energyplus_folder("/usr/local/EnergyPlus-9-3-0/")
+Model.set_energyplus_folder("D:\\Software\\EnergyPlus\\")
 
 mode = 1
 
-model = Model(idf_file_name="../buildings/5ZoneAirCooled.idf",
-              weather_file="../weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw")
+model = Model(idf_file_name="../data/buildings/5ZoneAirCooled.idf",
+              weather_file="../data/weathers/USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw",)
 
 # Example of how to check the required fields for a new component
 print(model.get_sub_configuration("Output:Variable"))
@@ -82,15 +82,16 @@ if mode == 1:
 #            Sample of adding occupancy using OccupancyGenerator
 # --------------------------------------------------------------------------
 elif mode == 2:
-    from occupancy_generator import OccupancyGenerator as OG
+    from cobs import OccupancyGenerator as OG
 
     OG(model).generate_daily_schedule(add_to_model=True)
 
 # Example of check what is available for the state value
 print(model.get_current_state_values())
 
-state = model.reset()
-while not model.is_terminate():
-    print(state)
-    state = model.step(list())
-print("Done")
+if __name__ == '__main__':
+    state = model.reset()
+    while not model.is_terminate():
+        print(state)
+        state = model.step(list())
+    print("Done")

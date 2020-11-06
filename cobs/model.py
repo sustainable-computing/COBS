@@ -379,14 +379,19 @@ class Model:
         current_state["temperature"] = dict()
         current_state["occupancy"] = dict()
         current_state["terminate"] = self.total_timestep == self.counter
-        if self.occupancy is not None:
-            current_state["occupancy"] = {zone: value[self.counter] for zone, value in self.occupancy.items()}
+        # if self.occupancy is not None:
+        #     current_state["occupancy"] = {zone: value[self.counter] for zone, value in self.occupancy.items()}
+        for name in self.zone_names:
+            handle = self.api.exchange.get_variable_handle("Zone People Occupant Count", name)
+            if handle == -1:
+                continue
+            current_state["occupancy"][name] = self.api.exchange.get_variable_value(handle)
         for name in self.zone_names:
             handle = self.api.exchange.get_variable_handle("Zone Air Temperature", name)
             if handle == -1:
                 continue
-            # print("Child: Simulating 2")
             current_state["temperature"][name] = self.api.exchange.get_variable_value(handle)
+
         handle = self.api.exchange.get_meter_handle("Heating:EnergyTransfer")
         current_state["energy"] = self.api.exchange.get_meter_value(handle)
         if self.reward is not None:
@@ -569,6 +574,8 @@ class Model:
         end += timedelta(days=1)
 
         timestep = self.get_configuration("Timestep")[0].Number_of_Timesteps_per_Hour
+        if 60 % timestep != 0:
+            timestep = 60 // round(60 / timestep)
 
         return int((end - start).total_seconds() // 3600 * timestep)
 
@@ -610,6 +617,12 @@ class Model:
 
         :return: None.
         """
+        try:
+            self.get_configuration("Output:Variable", "Zone People Occupant Count")
+        except KeyError:
+            self.add_configuration("Output:Variable", {"Key Value": '*',
+                                                       "Variable Name": "Zone People Occupant Count",
+                                                       "Reporting Frequency": "Timestep"})
         self.idf.saveas(self.input_idf)
         self.use_lock = False
         self.zone_names = self.get_available_names_under_group("Zone")
