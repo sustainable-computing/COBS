@@ -851,13 +851,19 @@ class Model:
 
         return zone_blinds
 
-    def set_blinds(self, windows, blind_material_name=None):
+    def set_blinds(self, windows, blind_material_name=None, shading_control_type='AlwaysOff', agent_control=False):
         """
         Install blinds that can be controlled on some given windows.
         :param windows: An iterable object that includes all windows' name that plan to install the blind.
         :param blind_material_name: The name of an existing blind in the IDF file  as the blind for all windows.
+        :param shading_control_type: Specify default EPlus control strategy (only works if control=False)
+        :param agent_control: False if using a default EPlus control strategy or no control (ie blinds always off).
+                        True if using an external agent to control the blinds.
         :return: None
         """
+        if agent_control:
+            shading_control_type = 'OnIfScheduleAllows'
+
         blind_material = None
         if blind_material_name:
             try:
@@ -890,17 +896,22 @@ class Model:
                                "Zone Name": zone,
                                "Shading Type": "InteriorBlind",
                                "Shading Device Material Name": f"{blind_mat.Name}",
-                               "Shading Control Type": "AlwaysOff",
+                               "Shading Control Type": shading_control_type,
                                "Setpoint": 50,
                                "Type of Slat Angle Control for Blinds": "ScheduledSlatAngle",
                                "Fenestration Surface 1 Name": window_idf.Name}
 
-                    angle_schedule = {"Name": f"{window}_shading_schedule",
-                                      "Schedule Type Limits Name": "Angle",
-                                      "Hourly Value": 45}
-                    self.add_configuration("Schedule:Constant", values=angle_schedule)
+                    if agent_control:
+                        shading["Slat Angle Schedule Name"] = f"{window}_shading_schedule"
+                        shading["Multiple Surface Control Type"] = "Group"
+                        shading["Shading Control Is Scheduled"] = "Yes"
+                        angle_schedule = {"Name": f"{window}_shading_schedule",
+                                          "Schedule Type Limits Name": "Angle",
+                                          "Hourly Value": 45}
+                        self.add_configuration("Schedule:Constant", values=angle_schedule)
 
                     self.add_configuration("WindowShadingControl", values=shading)
+                    
 
     def set_occupancy(self, occupancy, locations):
         """
