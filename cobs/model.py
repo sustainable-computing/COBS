@@ -7,6 +7,7 @@ from multiprocessing import Event, Pipe, Process
 import os
 from datetime import datetime, timedelta
 from cobs.state_modifier import StateModifier
+from calendar import isleap
 
 
 class Agent:
@@ -105,6 +106,7 @@ class Model:
         self.eplus_var_types = eplus_var_types
         self.prev_reward = None
         self.total_timestep = -1
+        self.leap_weather = False
         self.state_modifier = StateModifier()
 
         # TODO: Validate input parameters
@@ -122,6 +124,12 @@ class Model:
         self.run_parameters = ["-d", "result", self.input_idf]
         if weather_file:
             self.run_parameters = ["-w", weather_file] + self.run_parameters
+            with open(weather_file, 'r') as w_file:
+                for line in w_file:
+                    line = line.split(',')
+                    if len(line) > 3 and line[0].upper() == "HOLIDAYS/DAYLIGHT SAVINGS":
+                        self.leap_weather = True if line[1].upper() == "YES" else False
+                        break
 
         try:
             self.idf = IDF(idf_file_name)
@@ -390,8 +398,8 @@ class Model:
             handle = self.api.exchange.get_variable_handle("Zone Air Temperature", name)
             if handle == -1:
                 continue
+            # print("Child: Simulating 2")
             current_state["temperature"][name] = self.api.exchange.get_variable_value(handle)
-
         handle = self.api.exchange.get_meter_handle("Heating:EnergyTransfer")
         current_state["energy"] = self.api.exchange.get_meter_value(handle)
         if self.reward is not None:
@@ -564,6 +572,11 @@ class Model:
         return self.current_state
 
     def get_total_timestep(self):
+        if "-w" not in self.run_parameters:
+            return self.get_configuration("Timestep")[0].Number_of_Timesteps_per_Hour * 24 * 8
+        elif len(self.get_configuration("RunPeriod")) == 0:
+            raise ValueError("Your IDF files does not specify the run period."
+                             "Please manually edit the IDF file or use Model().set_runperiod(...)")
         run_period = self.get_configuration("RunPeriod")[0]
         start = datetime(year=run_period.Begin_Year if run_period.Begin_Year else 2000,
                          month=run_period.Begin_Month,
@@ -572,6 +585,13 @@ class Model:
                        month=run_period.End_Month,
                        day=run_period.End_Day_of_Month)
         end += timedelta(days=1)
+
+        if not self.leap_weather:
+            offset = 0
+            for year in range(start.year, end.year + 1):
+                if isleap(year) and datetime(year, 2, 29) > start and datetime(year, 2, 29) < end:
+                    offset += 1
+            end -= timedelta(days=offset)
 
         timestep = self.get_configuration("Timestep")[0].Number_of_Timesteps_per_Hour
         if 60 % timestep != 0:
@@ -911,7 +931,7 @@ class Model:
                         self.add_configuration("Schedule:Constant", values=angle_schedule)
 
                     self.add_configuration("WindowShadingControl", values=shading)
-                    
+
 
     def set_occupancy(self, occupancy, locations):
         """
@@ -943,7 +963,19 @@ class Model:
         :param specify_year: Use default year or a specific year when simulation is within a year.
         :return: None
         """
-        end = datetime(start_year, start_month, start_day) + timedelta(days=days - 1)
+        if "-w" not in self.run_parameters:
+            raise KeyError("You must include a weather file to set run period")
+        start = datetime(start_year, start_month, start_day)
+        end = start + timedelta(days=days - 1)
+        if not self.leap_weather:
+            test_year = start_year - 1
+            while datetime(test_year, 1, 1) < end:
+                test_year += 1
+                if not isleap(test_year):
+                    continue
+                if datetime(test_year, 2, 29) > start and datetime(test_year, 2, 29) < end:
+                    end += timedelta(days=1)
+
         values = {"Begin Month": start_month,
                   "Begin Day of Month": start_day,
                   "End Month": end.month,
@@ -951,8 +983,13 @@ class Model:
         if end.year != start_year or specify_year:
             values.update({"Begin Year": start_year,
                            "End Year": end.year})
-        name = self.get_configuration("RunPeriod")[0].Name
-        self.edit_configuration("RunPeriod", {"Name": name}, values)
+        run_setting = self.get_configuration("RunPeriod")
+        if len(run_setting) == 0:
+            values["Name"] = "RunPeriod 1"
+            self.add_configuration("RunPeriod", values)
+        else:
+            name = self.get_configuration("RunPeriod")[0].Name
+            self.edit_configuration("RunPeriod", {"Name": name}, values)
 
     def set_timestep(self, timestep_per_hour):
         """

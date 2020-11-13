@@ -1,5 +1,5 @@
 import numpy as np
-from random import choice
+from random import choice, seed
 from datetime import datetime, timedelta
 
 
@@ -11,7 +11,8 @@ class OccupancyGenerator:
 
     def __init__(self,
                  model,
-                 num_occupant=10):
+                 num_occupant=10,
+                 random_seed=None):
         """
         This class contains multiple editable attributes to generate the occupancy schedule. Default setting includes:
         Work shift: 9:00 ~ 17:00, where people start arriving/leaving 30 minutes earily.
@@ -21,11 +22,15 @@ class OccupancyGenerator:
         Chat with colleague: average 30 minutes each.
         Customer service time: average 30 minutes each.
         Average number of guests per day: 3.
-        
+
         :parameter model: The ``COBS.Model`` class object as the target building model.
-        
+
         :parameter num_occupant: The number of long-term occupants belongs to the model.
+        :parameter random_seed: The seed for numpy and random module. None means no seed specified.
         """
+        if random_seed is not None:
+            seed(random_seed)
+            np.random.seed(random_seed)
         self.start_work = 9 * 60 * 60  # Work start from 9:00. unit: second
         self.end_work = 17 * 60 * 60  # Work end at 17:00. unit: second
         self.daily_report = 16 * 60 * 60  # Daily progress report at 16:00, in meeting room
@@ -95,7 +100,7 @@ class OccupancyGenerator:
     def generate_all_people_daily_movement(self):
         """
         Generate a list of ``Person`` objects and simulate the movement for each person.
-        
+
         :return: list of ``Person`` objects.
         """
         available_worker = list()
@@ -124,12 +129,14 @@ class OccupancyGenerator:
 
         return all_people
 
-    def generate_daily_schedule(self, add_to_model=True):
+    def generate_daily_schedule(self, add_to_model=True, overwrite_dict=None):
         """
         Generate a numpy matrix contains the locations of all occupants in the day and add tp the model.
-        
+
         :parameter add_to_model: Default is True. If False, then only generate the schedule in numpy and IDF format but not save to the model automatically.
-        
+
+        :parameter overwrite_dict: Default is None. If set to a dict with {zone_name: old_people_object_name}, it will overwrite existing People instead of creating a new one
+
         :return: Three objects, (IDF format schedule, numpy format schedule, list of all accessble locations in the building).
         """
         all_zones = self.model.get_available_names_under_group("Zone")
@@ -212,18 +219,21 @@ class OccupancyGenerator:
             all_commands.append(result_command)
             if add_to_model:
                 self.model.add_configuration("Schedule:Compact", values=result_command)
-
-                people_values = {"Name": f"Test_Zone_{zone}",
-                                 "Zone or ZoneList Name": zone,
-                                 "Number of People Schedule Name": f"Generated_Schedule_Zone_{zone}",
-                                 "Number of People": location_matrix.shape[0],
-                                 "Activity Level Schedule Name": "Test_Activity_Schedule",
-                                 "Work Efficiency Schedule Name": "Test_Work_Schedule",
-                                 "Clothing Insulation Schedule Name": "Test_Cloth_Schedule",
-                                 "Air Velocity Schedule Name": "Test_Air_Velocity",
-                                 "Thermal Comfort Model 1 Type": "Fanger"}
-
-                self.model.add_configuration("People", values=people_values)
+                if overwrite_dict is not None and zone in overwrite_dict:
+                    self.model.edit_configuration("People",
+                                                  {"Name": overwrite_dict[zone]},
+                                                  {"Number of People Schedule Name": f"Generated_Schedule_Zone_{zone}"})
+                else:
+                    people_values = {"Name": f"Test_Zone_{zone}",
+                                     "Zone or ZoneList Name": zone,
+                                     "Number of People Schedule Name": f"Generated_Schedule_Zone_{zone}",
+                                     "Number of People": location_matrix.shape[0],
+                                     "Activity Level Schedule Name": "Test_Activity_Schedule",
+                                     "Work Efficiency Schedule Name": "Test_Work_Schedule",
+                                     "Clothing Insulation Schedule Name": "Test_Cloth_Schedule",
+                                     "Air Velocity Schedule Name": "Test_Air_Velocity",
+                                     "Thermal Comfort Model 1 Type": "Fanger"}
+                    self.model.add_configuration("People", values=people_values)
 
         return all_commands, location_matrix, zone_occupancy, self.possible_locations
 
@@ -251,6 +261,7 @@ class OccupancyGenerator:
     def generate_light(self, input_name=None):
         pass
 
+
 class Person:
     """
     This class contains the detail location of a single occupant.
@@ -259,9 +270,9 @@ class Person:
     def __init__(self, generator, office=None):
         """
         Each long-term occupant will have an office, and he tend to stay in office more than other places.
-        
+
         :parameter generator: The OccupancyGenerator which provides the settings.
-        
+
         :parameter office: The designated office for long-term occupants.
         """
         self.office = office
@@ -271,13 +282,13 @@ class Person:
     def customer_come(self, start_time, end_time, dest):
         """
         Simulate the event of customers coming for the current occupant.
-        
+
         :parameter start_time: The scheduled appointment start time (not the real start time).
-        
+
         :parameter end_time: The scheduled appointment end time (not the real end time).
-        
+
         :parameter dest: The appointment location (zone entry).
-        
+
         :return: None
         """
         pass_zones = self.source.get_path(self.source.entry_zone, dest)
@@ -306,8 +317,8 @@ class Person:
         """
         Each person need to decide if he/she will come to work today, when exactly they come, and when exactly
         they leave. We assume people start to come at 8:30 am and leave at 5 pm, with a poisson arrival lambda = 30 min.
-        Notice that we simulate this as poisson arrival, which means two arrivals are not independent. 
-        
+        Notice that we simulate this as poisson arrival, which means two arrivals are not independent.
+
         :return: True if come to work, False otherwise
         """
         self.position = np.zeros(self.source.day_cut_off)
@@ -351,7 +362,7 @@ class Person:
     def generate_lunch(self):
         """
         Generate the time that current occupant go to the cafeteria and take the lunch.
-        
+
         :return: None
         """
         # Usually go for lunch immediately, with average delay of 5 minute
@@ -384,7 +395,7 @@ class Person:
     def generate_daily_meeting(self):
         """
         Generate the time that current occupant go to the daily meeting.
-        
+
         :return: None
         """
         # Arrive maximum 3 min early, 2 min late
@@ -417,11 +428,11 @@ class Person:
     def check_in_office(self, start, end):
         """
         Determine if the occupant is in his/her office or not during a given period of time.
-        
+
         :parameter start: The start time.
-        
+
         :parameter end: The end time.
-        
+
         :return: Return True if the occupant is in his/her office between given time, and False otherwise.
         """
         return np.sum(self.position[start:end] == self.source.possible_locations.index(self.office)) == (end - start)
@@ -443,9 +454,9 @@ class Person:
     def handle_customer(self, num_customer):
         """
         Set up an appointment for occupant with some new customers.
-        
+
         :parameter num_customer: Number of customers in total today will come.
-        
+
         :return: tuple of (appointment start time, appointment end time, appointment location).
         """
         # Set-up meeting time
@@ -477,7 +488,7 @@ class Person:
     def generate_go_other_office(self):
         """
         Generate the event of visiting colleagues' office for random talk. Only possible if the colleague is in the office.
-        
+
         :return: None.
         """
         for _ in range(np.random.poisson(self.source.visit_colleague)):
@@ -506,9 +517,9 @@ class Person:
     def generate_daily_route(self, customer_list):
         """
         Generate the whole day locations for the occupant.
-        
+
         :parameter customer_list: List of Person that will visit the occupant today.
-        
+
         :return: List of appointment times.
         """
         time_list = list()
@@ -522,9 +533,9 @@ class Person:
     def get_position(self, sec):
         """
         Get the location of the occupant at the given time
-        
+
         :parameter sec: The time that need to check.
-        
+
         :return: The zone entry of the location at the given time.
         """
         if self.position[sec] == self.source.possible_locations.index("busy"):
@@ -538,9 +549,9 @@ class Person:
 def get_white_bias(second):
     """
     Generate a bias.
-    
+
     :parameter second: Value range.
-    
+
     :return: Bias.
     """
     return np.random.randint(second * 2 + 1) - second
