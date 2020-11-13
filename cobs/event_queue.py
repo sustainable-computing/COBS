@@ -1,12 +1,7 @@
 class EventQueue:
     def __init__(self):
         """
-        queue: dict
-            time -> dict
-                    {
-                        actuator -> {component|*|ctrl|*|key -> [priority, value]}
-                        global -> {var_name -> [priority, value]}
-                    }
+        A priority queue schedule all actions.
         """
         self.queue = dict()
         self.extra_events = dict()
@@ -19,6 +14,18 @@ class EventQueue:
                          start_time: int,
                          end_time: int = None,
                          note: str = None):
+        """
+        Add events/actions that is not for the EnergyPlus to run.
+        This action is stored in a separate queue for other agents/predictive models/estimation models to use.
+
+        :param value_name: Name of the action.
+        :param priority: An integer. Lower value indicates a higher priority.
+        :param value: Action value.
+        :param start_time: When this action will be triggered.
+        :param end_time: (Optional) When this action will stop.
+        :param note: (Optional) Placeholder for extra information.
+        :return: None.
+        """
         if end_time is None:
             end_time = start_time + 1
         for time in range(start_time, end_time):
@@ -32,16 +39,31 @@ class EventQueue:
     def schedule_event(self,
                        value,
                        start_time: int,
-                       priority: int,  # lower with higher priority
-                       type: str = "actuator",  # Actuator or global
+                       priority: int,
+                       type: str = "actuator",
                        dict_target: dict = None,
                        component_type: str = None,
-                       # https://nrel.github.io/EnergyPlus/api/python/_modules/datatransfer.html#DataExchange.get_actuator_handle
                        control_type: str = None,
                        actuator_key: str = None,
                        var_name: str = None,
                        end_time: int = None,
                        note: str = None):
+        """
+        Add events/actions that is for the EnergyPlus to run.
+
+        :param value: Action value.
+        :param start_time: When this action will be triggered.
+        :param priority: An integer. Lower value indicates a higher priority.
+        :param type: One of ``actuator`` and ``global``.
+        :param dict_target: A dictionay type of action contains the ``component_type``, ``control_type``, and ``actuator_key``.
+        :param component_type: A string same as the EnergyPlus conponent type.
+        :param control_type: A string same as the EnergyPlus control type.
+        :param actuator_key: A string same as the EnergyPlus actuator name.
+        :param var_name: A string same as the EnergyPlus global controller name.
+        :param end_time: (Optional) When this action will stop.
+        :param note: (Optional) Placeholder for extra information.
+        :return: None.
+        """
 
         control_str = ""
         if type == "actuator":
@@ -68,9 +90,22 @@ class EventQueue:
 
     def get_event(self,
                   time: int):
+        """
+        Get all events/actions that happens at a given time.
+
+        :param time: Target time.
+        :return: a dictionary contains all events/actions scheduled at the given time.
+        """
         return self.queue.get(time, {"actuator": dict(), "global": dict()})
 
     def trigger(self,
                 current_time: int):
+        """
+        Get all events/actions that happens at a given time.
+        In the meantime, lock all happened actions. No more actions can be scheduled before the given time.
+
+        :param current_time: Target time.
+        :return: a dictionary contains all events/actions scheduled at the given time.
+        """
         self.lockdown = current_time
         return self.get_event(current_time)

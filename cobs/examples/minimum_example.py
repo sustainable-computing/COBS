@@ -3,7 +3,8 @@ This is an example of how to run a simple simulation using COBS.
 This dummy agent send no action to the environment and print out
 the state value of the current timestep until done.
 """
-
+import sys
+sys.path.insert(0, "D:\\Work\\COBS\\")
 from cobs import Model
 
 Model.set_energyplus_folder("D:\\Software\\EnergyPlus\\")
