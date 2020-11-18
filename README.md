@@ -21,7 +21,7 @@ Visit this [page](https://cobs-platform.github.io/dependencies.html) for the ful
 + Weather data (`./cobs/data/weathers/*`): The Pacific Northwest National Laboratory (PNNL)
 
 ## Cite COBS
-Tianyu Zhang, Omid Ardakanian. 2020. [COBS: COmprehensive Building Simulator](https://doi.org/10.1145/3408308.3431119), In _Proceedings of the 7th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation (BuildSys '20)_. ACM, 314-315
+Tianyu Zhang, Omid Ardakanian. 2020. [COBS: COmprehensive Building Simulator](https://doi.org/10.1145/3408308.3431119), In _Proceedings of the 7th ACM International Conference on Systems for Energy-Efficient Buildings, Cities, and Transportation (BuildSys '20)_. ACM, 314-315.
 ```
 @inproceedings{10.1145/3408308.3431119,
 author = {Zhang, Tianyu and Ardakanian, Omid},
