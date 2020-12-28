@@ -14,7 +14,7 @@ We welcome contributions in different forms, from bug reports to pull requests. 
 Documentation is available at https://cobs-platform.github.io
 
 ## Dependencies
-Visit this [page](https://cobs-platform.github.io/dependencies.html) for the full list of dependencies.
+This platform requires [EnergyPlus v9.3.0](https://github.com/NREL/EnergyPlus/releases/tag/v9.3.0) and is not capatible with other version for now. Visit this [page](https://cobs-platform.github.io/dependencies.html) for the full list of dependencies.
 
 ## Acknowledgement
 + Building models (`./cobs/data/buildings/*`): The Pacific Northwest National Laboratory (PNNL)
