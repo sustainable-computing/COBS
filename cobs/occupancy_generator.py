@@ -237,6 +237,41 @@ class OccupancyGenerator:
 
         return all_commands, location_matrix, zone_occupancy, self.possible_locations
 
+    def one_day_numpy_to_schedule(self, array, name):
+        result_command = {"Name": f"{name}",
+                          "Schedule Type Limits Name": "Any Number"}
+
+        counter = 1
+        for t in range(1, 24 * 60):
+            if array[t] == array[t - 1]:
+                continue
+            hour = t // 60
+            minute = t % 60
+            result_command[f"Time {counter}"] = f"Until {hour:02d}:{minute:02d}"
+            result_command[f"Value Until Time {counter}"] = f"{int(array[t - 1])}"
+            counter += 1
+
+        result_command[f"Time {counter}"] = f"Until 24:00"
+        result_command[f"Value Until Time {counter}"] = f"{int(array[-1])}"
+        return self.model.add_configuration("Schedule:Day:Interval", values=result_command)
+
+    def generate_schedule_using_numpy(self, occupancy, room_name=None, start_day=0):
+        """
+        Generate the occupancy pattern based on a given numpy ndarray, and add it to the model.
+
+        :parameter occupancy: The numpy array with shape of (365, number_of_room, 24 * 60),
+        where the first dimension indicates the 365 days on a year, the second dimension indicates the occupancy for
+        each room, and the third dimension indicates the minute in a day. The value of this ndarray should be the
+        number of occupants in the room at a specific time on a specific day. If the second dimension < actual number
+        of rooms, the rest rooms are considered unoccupied all the time.
+
+        :parameter room_name: an iterable object contains the name of rooms in the order they stored in the occupancy
+        ndarray's second dimension. If room_name is not provided, then the default order will be used.
+
+        :parameter start_day: Specify the start day of the week. 0 means Sunday, and 6 means Saturday.
+        """
+        pass
+
     def save_light_config(self, output_name=None):
         if self.light_config is None:
             self.initialize_light_config()
