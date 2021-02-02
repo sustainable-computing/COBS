@@ -84,7 +84,10 @@ if mode == 1:
 elif mode == 2:
     from cobs import OccupancyGenerator as OG
 
-    OG(model).generate_daily_schedule(add_to_model=True)
+    OG(model).generate_daily_schedule(add_to_model=True,
+                                      overwrite_dict={f"SPACE{i}-1": f"SPACE{i}-1 People 1"
+                                                      for i in range(1, 6)}
+                                      )
 
 # Example of check what is available for the state value
 print(model.get_current_state_values())

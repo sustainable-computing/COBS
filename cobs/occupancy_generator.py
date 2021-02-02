@@ -63,6 +63,7 @@ class OccupancyGenerator:
         self.entry_zone = choice(list(self.zone_link["Outdoor"]))
         self.possible_locations.insert(0, "Outdoor")
         self.possible_locations.append("busy")
+        self.weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
         self.work_zones.remove(self.lunch_room)
         if self.meeting_room != self.lunch_room:
@@ -156,38 +157,7 @@ class OccupancyGenerator:
         all_commands = list()
 
         if add_to_model:
-            activity_values = {"Name": "Test_Activity_Schedule",
-                               "Schedule Type Limits Name": "Any Number",
-                               "Field 1": "Through:12/31",
-                               "Field 2": "For: Alldays",
-                               "Field 3": "Until 24:00",
-                               "Field 4": "200"}
-
-            work_efficiency = {"Name": "Test_Work_Schedule",
-                               "Schedule Type Limits Name": "Fraction",
-                               "Field 1": "Through:12/31",
-                               "Field 2": "For: Alldays",
-                               "Field 3": "Until 24:00",
-                               "Field 4": "0.1"}
-
-            cloth_schedule = {"Name": "Test_Cloth_Schedule",
-                              "Schedule Type Limits Name": "Fraction",
-                              "Field 1": "Through:12/31",
-                              "Field 2": "For: Alldays",
-                              "Field 3": "Until 24:00",
-                              "Field 4": "0.9"}
-
-            air_velocity = {"Name": "Test_Air_Velocity",
-                            "Schedule Type Limits Name": "Fraction",
-                            "Field 1": "Through:12/31",
-                            "Field 2": "For: Alldays",
-                            "Field 3": "Until 24:00",
-                            "Field 4": "0.25"}
-
-            self.model.add_configuration("Schedule:Compact", values=activity_values)
-            self.model.add_configuration("Schedule:Compact", values=work_efficiency)
-            self.model.add_configuration("Schedule:Compact", values=cloth_schedule)
-            self.model.add_configuration("Schedule:Compact", values=air_velocity)
+            act, work, cloth, air = self.occupancy_prep()
             self.model.add_configuration("Output:Variable", values={"Variable Name": "Zone People Occupant Count",
                                                                     "Reporting_Frequency": "timestep"})
             self.model.add_configuration("Output:Variable",
@@ -222,16 +192,17 @@ class OccupancyGenerator:
                 if overwrite_dict is not None and zone in overwrite_dict:
                     self.model.edit_configuration("People",
                                                   {"Name": overwrite_dict[zone]},
-                                                  {"Number of People Schedule Name": f"Generated_Schedule_Zone_{zone}"})
+                                                  {"Number of People": 1,
+                                                   "Number of People Schedule Name": f"Generated_Schedule_Zone_{zone}"})
                 else:
                     people_values = {"Name": f"Test_Zone_{zone}",
                                      "Zone or ZoneList Name": zone,
                                      "Number of People Schedule Name": f"Generated_Schedule_Zone_{zone}",
-                                     "Number of People": location_matrix.shape[0],
-                                     "Activity Level Schedule Name": "Test_Activity_Schedule",
-                                     "Work Efficiency Schedule Name": "Test_Work_Schedule",
-                                     "Clothing Insulation Schedule Name": "Test_Cloth_Schedule",
-                                     "Air Velocity Schedule Name": "Test_Air_Velocity",
+                                     "Number of People": 1,
+                                     "Activity Level Schedule Name": act,
+                                     "Work Efficiency Schedule Name": work,
+                                     "Clothing Insulation Schedule Name": cloth,
+                                     "Air Velocity Schedule Name": air,
                                      "Thermal Comfort Model 1 Type": "Fanger"}
                     self.model.add_configuration("People", values=people_values)
 
@@ -242,8 +213,8 @@ class OccupancyGenerator:
                           "Schedule Type Limits Name": "Any Number"}
 
         counter = 1
-        for t in range(1, 24 * 60):
-            if array[t] == array[t - 1]:
+        for t in range(1, 24 * 60 + 1):
+            if t < 24 * 60 and array[t] == array[t - 1]:
                 continue
             hour = t // 60
             minute = t % 60
@@ -251,11 +222,100 @@ class OccupancyGenerator:
             result_command[f"Value Until Time {counter}"] = f"{int(array[t - 1])}"
             counter += 1
 
-        result_command[f"Time {counter}"] = f"Until 24:00"
-        result_command[f"Value Until Time {counter}"] = f"{int(array[-1])}"
         return self.model.add_configuration("Schedule:Day:Interval", values=result_command)
 
-    def generate_schedule_using_numpy(self, occupancy, room_name=None, start_day=0):
+    def daily_to_week(self, daily_name_list, name, start_day):
+        result_command = {"Name": f"{name}"}
+
+        for i, daily_name in enumerate(daily_name_list):
+            result_command[f"{self.weekdays[(start_day + i) % len(self.weekdays)]} Schedule:Day Name"] = daily_name
+
+        result_command["Holiday Schedule:Day Name"] = result_command["Sunday Schedule:Day Name"]
+        result_command["SummerDesignDay Schedule:Day Name"] = result_command["Sunday Schedule:Day Name"]
+        result_command["WinterDesignDay Schedule:Day Name"] = result_command["Sunday Schedule:Day Name"]
+        result_command["CustomDay1 Schedule:Day Name"] = result_command["Sunday Schedule:Day Name"]
+        result_command["CustomDay2 Schedule:Day Name"] = result_command["Sunday Schedule:Day Name"]
+
+        return self.model.add_configuration("Schedule:Week:Daily", values=result_command)
+
+    def weeks_to_year(self, week_name_list, name):
+        result_command = {"Name": f"{name}",
+                          "Schedule Type Limits Name": "Any Number"}
+
+        start = datetime(1995 + self.model.leap_weather, 1, 1)
+        start_next = datetime(1995 + self.model.leap_weather, 1, 1)
+        counter = 1
+        for t in range(1, 54):
+            start_next = start_next + timedelta(days=7)
+            if t < 53 and week_name_list[t - 1] == week_name_list[t]:
+                continue
+            end = start_next - timedelta(days=1)
+            result_command[f"Schedule:Week Name {counter}"] = week_name_list[t - 1]
+            result_command[f"Start Month {counter}"] = start.month
+            result_command[f"Start Day {counter}"] = start.day
+            result_command[f"End Month {counter}"] = end.month
+            result_command[f"End Day {counter}"] = end.day
+            start = start_next
+            counter += 1
+
+        result_command[f"End Month {counter - 1}"] = 12
+        result_command[f"End Day {counter - 1}"] = 31
+
+        return self.model.add_configuration("Schedule:Year", values=result_command)
+
+    def occupancy_prep(self):
+        activity_values = {"Name": "Test_Activity_Schedule",
+                           "Schedule Type Limits Name": "Any Number",
+                           "Field 1": "Through:12/31",
+                           "Field 2": "For: Alldays",
+                           "Field 3": "Until 24:00",
+                           "Field 4": "200"}
+
+        work_efficiency = {"Name": "Test_Work_Schedule",
+                           "Schedule Type Limits Name": "Fraction",
+                           "Field 1": "Through:12/31",
+                           "Field 2": "For: Alldays",
+                           "Field 3": "Until 24:00",
+                           "Field 4": "0.1"}
+
+        cloth_schedule = {"Name": "Test_Cloth_Schedule",
+                          "Schedule Type Limits Name": "Fraction",
+                          "Field 1": "Through:12/31",
+                          "Field 2": "For: Alldays",
+                          "Field 3": "Until 24:00",
+                          "Field 4": "0.9"}
+
+        air_velocity = {"Name": "Test_Air_Velocity",
+                        "Schedule Type Limits Name": "Fraction",
+                        "Field 1": "Through:12/31",
+                        "Field 2": "For: Alldays",
+                        "Field 3": "Until 24:00",
+                        "Field 4": "0.25"}
+
+        returns = [activity_values["Name"], work_efficiency["Name"], cloth_schedule["Name"], air_velocity["Name"]]
+
+        if len(self.model.get_configuration("People")) == 0:
+
+            self.model.add_configuration("Schedule:Compact", values=activity_values)
+            self.model.add_configuration("Schedule:Compact", values=work_efficiency)
+            self.model.add_configuration("Schedule:Compact", values=cloth_schedule)
+            self.model.add_configuration("Schedule:Compact", values=air_velocity)
+
+        else:
+            prev = self.model.get_configuration("People")[0]
+
+            for i, name, var in ((0, "Activity Level Schedule Name", activity_values),
+                                 (1, "Work Efficiency Schedule Name", work_efficiency),
+                                 (2, "Clothing Insulation Schedule Name", cloth_schedule),
+                                 (3, "Air Velocity Schedule Name", air_velocity)):
+                if name not in prev:
+                    self.model.add_configuration("Schedule:Compact", values=var)
+                else:
+                    returns[i] = prev[name]
+
+            return returns
+
+    def generate_schedule_using_numpy(self, occupancy, room_name=None, start_day=0, overwrite_dict=None):
         """
         Generate the occupancy pattern based on a given numpy ndarray, and add it to the model.
 
@@ -269,8 +329,59 @@ class OccupancyGenerator:
         ndarray's second dimension. If room_name is not provided, then the default order will be used.
 
         :parameter start_day: Specify the start day of the week. 0 means Sunday, and 6 means Saturday.
+
+        :parameter overwrite_dict: Default is None. If set to a dict with {zone_name: old_people_object_name},
+        it will overwrite existing People instead of creating a new one
         """
-        pass
+        if not isinstance(occupancy, np.ndarray) or \
+                occupancy.ndim != 3 or \
+                occupancy.shape[0] != 365 + self.model.leap_weather or \
+                occupancy.shape[2] != 24 * 60:
+            raise ValueError(f"Wrong format of the occupancy numpy array. "
+                             f"The shape must be ({365 + self.model.leap_weather}, n, 24 * 60)")
+        if room_name is None:
+            room_name = self.model.get_available_names_under_group("Zone")
+
+        occupancy = occupancy.astype(int)
+        days, rooms, _ = occupancy.shape
+
+        name = self.model.get_configuration("RunPeriod")[0].Name
+        self.model.edit_configuration("RunPeriod",
+                                      {"Name": name},
+                                      {"Day of Week for Start Day": self.weekdays[start_day]})
+
+        occupancy, corres_id = np.unique(occupancy.reshape(-1, 24 * 60), axis=0, return_inverse=True)
+        for i, row in enumerate(occupancy):
+            self.one_day_numpy_to_schedule(row, name=f"Day Type {i}")
+
+        occupancy, corres_id = np.unique(np.concatenate((corres_id.reshape(days, -1),
+                                                         np.zeros((7 - days % 7, rooms))), axis=0).T.reshape(-1, 7),
+                                         axis=0, return_inverse=True)
+
+        for i, row in enumerate(occupancy.astype(int)):
+            self.daily_to_week(map(lambda x: f"Day Type {x}", row), name=f"Week Type {i}", start_day=start_day)
+
+        for i, row in enumerate(corres_id.reshape(rooms, -1).astype(int)):
+            if i == len(room_name):
+                break
+            self.weeks_to_year(list(map(lambda x: f"Week Type {x}", row)), name=f"Year For {room_name[i]}")
+            if overwrite_dict is not None and room_name[i] in overwrite_dict:
+                self.model.edit_configuration("People",
+                                              {"Name": overwrite_dict[room_name[i]]},
+                                              {"Number of People": 1,
+                                               "Number of People Schedule Name": f"Year For {room_name[i]}"})
+            else:
+                act, work, cloth, air = self.occupancy_prep()
+                people_values = {"Name": f"Test_Zone_{room_name[i]}",
+                                 "Zone or ZoneList Name": room_name[i],
+                                 "Number of People Schedule Name": f"Year For {room_name[i]}",
+                                 "Number of People": 1,
+                                 "Activity Level Schedule Name": act,
+                                 "Work Efficiency Schedule Name": work,
+                                 "Clothing Insulation Schedule Name": cloth,
+                                 "Air Velocity Schedule Name": air,
+                                 "Thermal Comfort Model 1 Type": "Fanger"}
+                self.model.add_configuration("People", values=people_values)
 
     def save_light_config(self, output_name=None):
         if self.light_config is None:

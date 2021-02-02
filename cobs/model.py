@@ -145,7 +145,7 @@ class Model:
 
         :return: The underline separated entry.
         """
-        name = name.replace(' ', '_').split('_')
+        name = name.replace(' ', '_').replace(':', '').split('_')
         return '_'.join([word for word in name])
 
     def list_all_available_configurations(self):
