@@ -1,4 +1,5 @@
 import numpy as np
+import json
 from random import choice, seed
 from datetime import datetime, timedelta
 
@@ -12,7 +13,8 @@ class OccupancyGenerator:
     def __init__(self,
                  model,
                  num_occupant=10,
-                 random_seed=None):
+                 random_seed=None,
+                 transition_matrics=None):
         """
         This class contains multiple editable attributes to generate the occupancy schedule. Default setting includes:
         Work shift: 9:00 ~ 17:00, where people start arriving/leaving 30 minutes earily.
@@ -27,6 +29,12 @@ class OccupancyGenerator:
 
         :parameter num_occupant: The number of long-term occupants belongs to the model.
         :parameter random_seed: The seed for numpy and random module. None means no seed specified.
+        :parameter transition_matrics: A list/tuple of numpy.ndarray, or a single numpy.ndarray, or None.
+        Each numpy.ndarray must be in the shape of (len(self.possible_locations), len(self.possible_locations)).
+        The first len(self.possible_locations) - 1 row and column represents the transition rate between zones that are in the order of self.possible_locations.
+        The last row and column represents the transition rate of the office to other zones (will overwrite previous transition rate).
+        Transition rate in the unit of seconds.
+        None means the occupant always stay in the office.
         """
         if random_seed is not None:
             seed(random_seed)
@@ -69,7 +77,18 @@ class OccupancyGenerator:
         if self.meeting_room != self.lunch_room:
             self.work_zones.remove(self.meeting_room)
 
-        self.worker_assign = [Person(self, office=choice(self.work_zones)) for _ in range(num_occupant)]
+        if isinstance(transition_matrics, (tuple, list)):
+            if len(transition_matrics) != num_occupant:
+                raise ValueError("Length of the transition_matrics must be num_occupant {%d}." % num_occupant)
+            self.worker_assign = [Person(self,
+                                         office=choice(self.work_zones),
+                                         transition_rate_matrix=transition_matrics[i]) for i in range(num_occupant)]
+        elif isinstance(transition_matrics, np.ndarray) or transition_matrics is None:
+            self.worker_assign = [Person(self,
+                                         office=choice(self.work_zones),
+                                         transition_rate_matrix=transition_matrics) for _ in range(num_occupant)]
+        else:
+            raise ValueError("transition_matrics must be a list/tuple of numpy.ndarray, single numpy.ndarray, or None.")
 
         # value = (np.random.beta(eat_time_a, eat_time_b, 10000) + 0.1) * 100
 
@@ -413,17 +432,22 @@ class Person:
     This class contains the detail location of a single occupant.
     """
 
-    def __init__(self, generator, office=None):
+    def __init__(self, generator, office=None, transition_rate_matrix=None):
         """
         Each long-term occupant will have an office, and he tend to stay in office more than other places.
 
         :parameter generator: The OccupancyGenerator which provides the settings.
 
         :parameter office: The designated office for long-term occupants.
+
+        :parameter transition_rate_matrix: The transition rate matrix for the current occupants (if None, assume the occupant tends to stay in the office).
         """
         self.office = office
         self.position = np.zeros(generator.day_cut_off)
         self.source = generator
+        self.start_time = 0
+        self.end_time = 0
+        self.transition_matrix = transition_rate_matrix
 
     def customer_come(self, start_time, end_time, dest):
         """
@@ -482,6 +506,9 @@ class Person:
                 leave_time = self.source.end_work + int(np.random.exponential(self.source.come_leave_flex_coef))
                 if leave_time >= self.source.day_cut_off:
                     leave_time = self.source.day_cut_off - 1
+
+                self.start_time = arrival_time
+                self.end_time = leave_time
 
                 pass_zones = self.source.get_path(self.source.entry_zone, self.office)
 
@@ -668,6 +695,8 @@ class Person:
 
         :return: List of appointment times.
         """
+        if self.transition_matrix is not None:
+            self.generate_base_positions()
         time_list = list()
         self.generate_lunch()
         self.generate_daily_meeting()
@@ -675,6 +704,67 @@ class Person:
             time_list.append(self.handle_customer(num_customer))
         self.generate_go_other_office()
         return time_list
+
+    def generate_base_positions(self, method="Competing Clocks"):
+        """
+        Generate the positions based on the transition rate matrix
+        :return: None.
+        """
+        next_positions = self.source.possible_locations[:-1]
+        office_idx = self.source.possible_locations.index(self.office)
+        q = self.transition_matrix[:-1, :-1]
+        q[office_idx, :] = self.transition_matrix[office_idx, :-1]
+        q[:, office_idx] = self.transition_matrix[:-1, office_idx]
+        for i in range(q.shape[0]):
+            q[i, i] = 0
+            q[i, i] = np.sum(q[i, :])
+
+        current_time = self.start_time
+        current_location = self.source.possible_locations.index("Outdoor")
+        initial = True
+        while current_time < self.end_time:
+            if method == "Competing Clocks":
+                timers = np.random.exponential(q[current_location, :])
+                next_location = timers.argmin()
+                if next_location == current_location:
+                    timers[next_location] += np.max(timers)
+                    next_location = timers.argmin()
+                stay_time = int(np.round(timers[next_location]))
+
+            elif method == "DTMC":
+                stay_time = int(np.round(np.random.exponential(q[current_location, current_location])))
+                p = np.random.exponential(q[current_location, :] / q[current_location, current_location])
+                p[current_location] = 0
+                next_location = np.random.choice(next_positions, p=p / np.sum(p))
+
+            else:
+                raise ValueError("Unknown transition generation method")
+
+            if initial:
+                current_location = next_location
+                initial = False
+
+            else:
+                if current_time + stay_time > self.end_time:
+                    current_time = self.end_time
+                    pass_zones = self.source.get_path(next_positions[current_location], "Outdoor")
+
+                    for i in range(len(pass_zones) - 1, 0, -1):
+                        tres_time = 3 + get_white_bias(1)
+                        self.position[current_time - tres_time:current_time] = next_positions.index(pass_zones[i])
+                        current_time -= tres_time
+                    current_time = self.end_time
+                else:
+                    self.position[current_time + 1:current_time + stay_time] = current_location
+                    current_time += stay_time
+                    # TODO: Trespass time
+                    pass_zones = self.source.get_path(next_positions[current_location], next_positions[next_location])
+                    for i in range(1, len(pass_zones)):
+                        tres_time = 3 + get_white_bias(1)
+                        self.position[current_time + 1:current_time + tres_time] = next_positions.index(pass_zones[i])
+                        current_time += tres_time
+
+                    current_location = next_location
 
     def get_position(self, sec):
         """
@@ -703,32 +793,5 @@ def get_white_bias(second):
     return np.random.randint(second * 2 + 1) - second
 
 
-def main():
-    all_people = generate_daily_data()
-    for person in all_people:
-        print(person.position.size)
-        # print(list(person.position))
-
-    # current = start_synthetic_data
-    # all_people = list()
-    # results = dict()
-    # for _ in range(int((end_synthetic_data - start_synthetic_data) / report_interval)):
-    #     # print(current)
-    #     results[str(current)[-8:].replace(':', '_')] = dict()
-    #     if current.hour + current.minute + current.second == 0:
-    #         # Generate a whole day data
-    #         all_people = generate_daily_data()
-    #     # for person in all_people:
-    #     #     print(person.get_position(current.second + 60 * current.minute + 60 * 60 * current.hour))
-    #
-    #     current += report_interval
-    #
-    #     if current.hour + current.minute + current.second == 0:
-    #         time_str = str(current)[:10].replace(' ', '_').replace('-', '_')
-    #         with open(f"output/{time_str}", 'w') as json_out:
-    #             json.dump(results, json_out)
-    #         results = dict()
-
-
 if __name__ == '__main__':
-    main()
+    pass
