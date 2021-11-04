@@ -55,8 +55,8 @@ class EventQueue:
         :param start_time: When this action will be triggered.
         :param priority: An integer. Lower value indicates a higher priority.
         :param type: One of ``actuator`` and ``global``.
-        :param dict_target: A dictionay type of action contains the ``component_type``, ``control_type``, and ``actuator_key``.
-        :param component_type: A string same as the EnergyPlus conponent type.
+        :param dict_target: A dictionary type of action contains the ``component_type``, ``control_type``, and ``actuator_key``.
+        :param component_type: A string same as the EnergyPlus component type.
         :param control_type: A string same as the EnergyPlus control type.
         :param actuator_key: A string same as the EnergyPlus actuator name.
         :param var_name: A string same as the EnergyPlus global controller name.

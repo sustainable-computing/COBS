@@ -102,8 +102,8 @@ class Model:
         self.child = None
         self.use_lock = False
         self.reward = reward
-        self.eplus_naming_dict = eplus_naming_dict
-        self.eplus_var_types = eplus_var_types
+        self.eplus_naming_dict = dict() if eplus_naming_dict is None else eplus_naming_dict
+        self.eplus_var_types = dict() if eplus_var_types is None else eplus_var_types
         self.prev_reward = None
         self.total_timestep = -1
         self.leap_weather = False
@@ -416,25 +416,30 @@ class Model:
                     continue
                 current_state["PMV"][self.thermal_names[zone]] = self.api.exchange.get_variable_value(handle)
 
-        # Add for temp extra output
-        if self.eplus_naming_dict is not None:
-            for entry in self.idf.idfobjects['OUTPUT:VARIABLE']:
-                # we only care about the output vars for Gnu-RL
-                if (entry['Variable_Name'], entry['Key_Value']) in self.eplus_naming_dict.keys():
-                    var_name = entry['Variable_Name']
+        # Add state values
+        state_vars = self.get_current_state_values()
 
-                    # if the key value is not associated with a zone return None for variable handler
-                    # key_val = entry['Key_Value'] if entry['Key_Value'] != '*' else None
-                    if entry['Key_Value'] == '*':
-                        key_val = self.eplus_var_types[var_name]
-                    else:
-                        key_val = entry['Key_Value']
-                    handle = self.api.exchange.get_variable_handle(var_name, key_val)
-                    if handle == -1:
+        # Add for temp extra output
+        for entry in self.idf.idfobjects['OUTPUT:VARIABLE']:
+            # we only care about the output vars for Gnu-RL
+            if (entry['Variable_Name'], entry['Key_Value']) in self.eplus_naming_dict.keys() or \
+               (entry['Variable_Name'], entry['Key_Value']) in state_vars:
+                var_name = entry['Variable_Name']
+
+                # if the key value is not associated with a zone return None for variable handler
+                # key_val = entry['Key_Value'] if entry['Key_Value'] != '*' else None
+                if entry['Key_Value'] == '*':
+                    key_val = self.eplus_var_types.get(var_name, None)
+                    if key_val is None:
                         continue
-                    # name the state value based on Gnu-RL paper
-                    key = self.eplus_naming_dict.get((var_name, entry['Key_Value']))
-                    current_state[key] = self.api.exchange.get_variable_value(handle)
+                else:
+                    key_val = entry['Key_Value']
+                handle = self.api.exchange.get_variable_handle(var_name, key_val)
+                if handle == -1:
+                    continue
+                # name the state value based on Gnu-RL paper
+                key = self.eplus_naming_dict.get((var_name, entry['Key_Value']), f"{var_name}_{key_val}")
+                current_state[key] = self.api.exchange.get_variable_value(handle)
 
         self.state_modifier.get_update_states(current_state, self)
         # current_state.update(update_dict)
@@ -556,7 +561,7 @@ class Model:
         self.total_timestep = self.get_total_timestep() - 1
         self.queue = EventQueue()
         self.replay.reset()
-        self.ignore_list = set()
+        # self.ignore_list = set()
         self.wait_for_state.clear()
         self.wait_for_step.clear()
         self.terminate = False
@@ -664,7 +669,7 @@ class Model:
         """
         Select interested state entries. If selected entry is not available for the current building, it will be ignored.
 
-        :parameter entry: Entry names that the state of the environment should have.
+        :parameter entry: Entry names and corresponding objects that the state of the environment should have.
 
         :parameter index: Index of all available entries that the state of the environment should have.
 
@@ -673,7 +678,7 @@ class Model:
         current_state = self.get_current_state_values()
         if entry is None:
             entry = list()
-        elif isinstance(entry, str):
+        elif isinstance(entry, tuple):
             entry = list(entry)
         if index is not None:
             if isinstance(index, int):
@@ -687,13 +692,13 @@ class Model:
         """
         Add entries to the state. If selected entry is not available for the current building, it will be ignored.
 
-        :parameter entry: Entry names that the state of the environment should have.
+        :parameter entry: Entry names and corresponding objects that the state of the environment should have.
 
         :return: None.
         """
         if not self.ignore_list:
             return
-        if isinstance(entry, str):
+        if isinstance(entry, tuple):
             entry = [entry]
 
         self.ignore_list -= set(entry)
@@ -702,11 +707,11 @@ class Model:
         """
         Remove entries from the state. If selected entry is not available in the state, it will be ignored.
 
-        :parameter entry: Entry names that the state of the environment should not have.
+        :parameter entry: Entry names and corresponding objects that the state of the environment should not have.
 
         :return: None.
         """
-        if isinstance(entry, str):
+        if isinstance(entry, tuple):
             entry = [entry]
         self.ignore_list = self.ignore_list.union(set(entry))
 
@@ -736,7 +741,8 @@ class Model:
         :return: List of available state entry names.
         """
 
-        output = self.get_available_names_under_group("Output:Variable")
+        output = [(var["Variable_Name"], var["Key_Value"])
+                  for var in self.get_configuration("Output:Variable") if var["Key_Value"] != "*"]
         output.sort()
         return output
 
