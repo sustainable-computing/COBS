@@ -417,7 +417,7 @@ class Model:
                 current_state["PMV"][self.thermal_names[zone]] = self.api.exchange.get_variable_value(handle)
 
         # Add state values
-        state_vars = self.get_current_state_values()
+        state_vars = self.get_current_state_variables()
 
         # Add for temp extra output
         for entry in self.idf.idfobjects['OUTPUT:VARIABLE']:
@@ -655,17 +655,17 @@ class Model:
         self._get_thermal_names()
         self.warmup_complete = False
 
-    def get_current_state_values(self):
+    def get_current_state_variables(self):
         """
         Find the current entries in the state.
 
         :return: List of entry names that is currently available in the state.
         """
-        state_values = list(set(self.get_possible_state_entries()) - self.ignore_list)
+        state_values = list(set(self.get_possible_state_variables()) - self.ignore_list)
         state_values.sort()
         return state_values
 
-    def select_state_values(self, entry=None, index=None):
+    def select_state_variables(self, entry=None, index=None):
         """
         Select interested state entries. If selected entry is not available for the current building, it will be ignored.
 
@@ -675,7 +675,7 @@ class Model:
 
         :return: None.
         """
-        current_state = self.get_current_state_values()
+        current_state = self.get_current_state_variables()
         if entry is None:
             entry = list()
         elif isinstance(entry, tuple):
@@ -686,9 +686,9 @@ class Model:
             for i in index:
                 if i < len(current_state):
                     entry.append(current_state[i])
-        self.ignore_list = set(self.get_possible_state_entries()) - set(entry)
+        self.ignore_list = set(self.get_possible_state_variables()) - set(entry)
 
-    def add_state_values(self, entry):
+    def add_state_variables(self, entry):
         """
         Add entries to the state. If selected entry is not available for the current building, it will be ignored.
 
@@ -703,7 +703,7 @@ class Model:
 
         self.ignore_list -= set(entry)
 
-    def remove_state_values(self, entry):
+    def remove_state_variables(self, entry):
         """
         Remove entries from the state. If selected entry is not available in the state, it will be ignored.
 
@@ -715,7 +715,7 @@ class Model:
             entry = [entry]
         self.ignore_list = self.ignore_list.union(set(entry))
 
-    def pop_state_values(self, index):
+    def pop_state_variables(self, index):
         """
         Remove entries from the state by its index. If selected index is not available in the state, it will be ignored.
 
@@ -723,7 +723,7 @@ class Model:
 
         :return: All entry names that is removed.
         """
-        current_state = self.get_current_state_values()
+        current_state = self.get_current_state_variables()
         pop_values = list()
         if isinstance(index, int):
             index = [index]
@@ -734,7 +734,7 @@ class Model:
 
         return pop_values
 
-    def get_possible_state_entries(self):
+    def get_possible_state_variables(self):
         """
         Get all available state entries. This list of entries only depends on the building architecture.
 

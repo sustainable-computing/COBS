@@ -79,18 +79,44 @@ class OccupancyGenerator:
 
         if isinstance(transition_matrics, (tuple, list)):
             if len(transition_matrics) != num_occupant:
-                raise ValueError("Length of the transition_matrics must be num_occupant {%d}." % num_occupant)
+                raise ValueError(f"Length of the transition_matrics must be num_occupant {num_occupant}.")
             self.worker_assign = [Person(self,
                                          office=choice(self.work_zones),
                                          transition_rate_matrix=transition_matrics[i]) for i in range(num_occupant)]
-        elif isinstance(transition_matrics, np.ndarray) or transition_matrics is None:
+        elif isinstance(transition_matrics, np.ndarray):
             self.worker_assign = [Person(self,
                                          office=choice(self.work_zones),
-                                         transition_rate_matrix=transition_matrics) for _ in range(num_occupant)]
+                                         transition_rate_matrix=transition_matrics.copy()) for _ in range(num_occupant)]
+        elif transition_matrics is None:
+            self.worker_assign = [Person(self,
+                                         office=choice(self.work_zones)) for _ in range(num_occupant)]
         else:
             raise ValueError("transition_matrics must be a list/tuple of numpy.ndarray, single numpy.ndarray, or None.")
 
         # value = (np.random.beta(eat_time_a, eat_time_b, 10000) + 0.1) * 100
+
+    def set_transition_matrics(self, transition_matrics):
+        """
+        Set the transition matrics to each corresponding person.
+
+        :param transition_matrics: A list of matrics or one matrix
+        """
+        if isinstance(transition_matrics, (tuple, list)):
+            if len(transition_matrics) != len(self.worker_assign):
+                raise ValueError(f"Length of the transition_matrics must be num_occupant {len(self.worker_assign)}.")
+            for i, q in enumerate(transition_matrics):
+                self.worker_assign[i].set_transition_matrix(q)
+        elif isinstance(transition_matrics, np.ndarray):
+            if transition_matrics.ndim == 3:
+                if transition_matrics.shape[0] != len(self.worker_assign):
+                    raise ValueError(f"For concatenated numpy array, the shape of the transition_matrics must be"
+                                     f" ({len(self.worker_assign)}, "
+                                     f"{len(self.possible_locations)}, {len(self.possible_locations)}).")
+                for i in range(transition_matrics.shape[0]):
+                    self.worker_assign[i].set_transition_matrix(transition_matrics[i, :, :])
+            else:
+                for worker in self.worker_assign:
+                    worker.set_transition_matrix(transition_matrics.copy())
 
     def get_path(self, start, end):
         """
@@ -117,7 +143,7 @@ class OccupancyGenerator:
                         queue.append((node, path + [node]))
         return [start]
 
-    def generate_all_people_daily_movement(self):
+    def generate_all_people_daily_movement(self, use_scheduled_events=True):
         """
         Generate a list of ``Person`` objects and simulate the movement for each person.
 
@@ -130,7 +156,7 @@ class OccupancyGenerator:
 
         # print(available_worker)
 
-        guests = np.random.poisson(self.guest_lambda)
+        guests = np.random.poisson(self.guest_lambda) if use_scheduled_events else 0
         guest_assign = np.random.choice(available_worker, size=guests)
         all_people = list()
         guest_counter = 0
@@ -139,7 +165,7 @@ class OccupancyGenerator:
             worker = self.worker_assign[i]
             all_people.append(worker)
             guest_list = np.random.randint(1, 4, size=np.sum(guest_assign == i))
-            appointments = worker.generate_daily_route(guest_list)
+            appointments = worker.generate_daily_route(guest_list, use_scheduled_events)
             for j, appointment in enumerate(appointments):
                 for _ in range(guest_list[j]):
                     new_guest = Person(self)
@@ -149,7 +175,7 @@ class OccupancyGenerator:
 
         return all_people
 
-    def generate_daily_schedule(self, add_to_model=True, overwrite_dict=None):
+    def generate_daily_schedule(self, add_to_model=True, overwrite_dict=None, use_scheduled_events=True):
         """
         Generate a numpy matrix contains the locations of all occupants in the day and add tp the model.
 
@@ -164,7 +190,7 @@ class OccupancyGenerator:
         for zone in all_zones:
             if zone in self.possible_locations:
                 valid_zones.append(zone)
-        all_people = self.generate_all_people_daily_movement()
+        all_people = self.generate_all_people_daily_movement(use_scheduled_events)
         locations = list()
         for person in all_people:
             locations.append(person.position.copy())
@@ -447,7 +473,35 @@ class Person:
         self.source = generator
         self.start_time = 0
         self.end_time = 0
-        self.transition_matrix = transition_rate_matrix
+        self.transition_matrix = None
+        if transition_rate_matrix is not None:
+            self.set_transition_matrix(transition_rate_matrix)
+
+    def set_transition_matrix(self, transition_rate_matrix):
+        """
+        Define the transition matrix for the current person
+
+        :param transition_rate_matrix: The transition matrix - a numpy array with shape
+        (num_possible_zone + 2, num_possible_zone + 2). The order is [Outdoor, each zone, office]
+        """
+        if not isinstance(transition_rate_matrix, np.ndarray):
+            raise ValueError(f"The provided transition matrix be a numpy.ndarray")
+        if len(self.source.possible_locations) != transition_rate_matrix.shape[0] or \
+                len(self.source.possible_locations) != transition_rate_matrix.shape[1]:
+            raise ValueError(f"The provided transition matrix must in shape "
+                             f"({len(self.source.possible_locations)}, {len(self.source.possible_locations)})")
+
+        office_idx = self.source.possible_locations.index(self.office)
+        self.transition_matrix = transition_rate_matrix[:-1, :-1]
+        if np.sum(transition_rate_matrix[-1, :]) + np.sum(transition_rate_matrix[-1, :]) == 0:
+            return
+        self.transition_matrix[office_idx, :office_idx] = transition_rate_matrix[-1, :office_idx]
+        self.transition_matrix[office_idx, office_idx:] = transition_rate_matrix[-1, office_idx:-1]
+        self.transition_matrix[:office_idx, office_idx] = transition_rate_matrix[:office_idx, -1]
+        self.transition_matrix[office_idx:, office_idx] = transition_rate_matrix[office_idx:-1, -1]
+        for i in range(self.transition_matrix.shape[0]):
+            self.transition_matrix[i, i] = 0
+            self.transition_matrix[i, i] = np.sum(self.transition_matrix[i, :])
 
     def customer_come(self, start_time, end_time, dest):
         """
@@ -687,7 +741,7 @@ class Person:
                     coworker.position[in_colleague:out_colleague] = self.source.possible_locations.index("busy")
                     break
 
-    def generate_daily_route(self, customer_list):
+    def generate_daily_route(self, customer_list, use_scheduled_events=True):
         """
         Generate the whole day locations for the occupant.
 
@@ -697,34 +751,29 @@ class Person:
         """
         if self.transition_matrix is not None:
             self.generate_base_positions()
+
         time_list = list()
-        self.generate_lunch()
-        self.generate_daily_meeting()
-        for num_customer in customer_list:
-            time_list.append(self.handle_customer(num_customer))
-        self.generate_go_other_office()
+        if use_scheduled_events:
+            self.generate_lunch()
+            self.generate_daily_meeting()
+            for num_customer in customer_list:
+                time_list.append(self.handle_customer(num_customer))
+            self.generate_go_other_office()
         return time_list
 
-    def generate_base_positions(self, method="Competing Clocks"):
+    def generate_base_positions(self, method="DTMC"):
         """
         Generate the positions based on the transition rate matrix
         :return: None.
         """
         next_positions = self.source.possible_locations[:-1]
-        office_idx = self.source.possible_locations.index(self.office)
-        q = self.transition_matrix[:-1, :-1]
-        q[office_idx, :] = self.transition_matrix[office_idx, :-1]
-        q[:, office_idx] = self.transition_matrix[:-1, office_idx]
-        for i in range(q.shape[0]):
-            q[i, i] = 0
-            q[i, i] = np.sum(q[i, :])
 
         current_time = self.start_time
         current_location = self.source.possible_locations.index("Outdoor")
         initial = True
         while current_time < self.end_time:
             if method == "Competing Clocks":
-                timers = np.random.exponential(q[current_location, :])
+                timers = np.random.exponential(self.transition_matrix[current_location, :])
                 next_location = timers.argmin()
                 if next_location == current_location:
                     timers[next_location] += np.max(timers)
@@ -732,10 +781,12 @@ class Person:
                 stay_time = int(np.round(timers[next_location]))
 
             elif method == "DTMC":
-                stay_time = int(np.round(np.random.exponential(q[current_location, current_location])))
-                p = np.random.exponential(q[current_location, :] / q[current_location, current_location])
+                stay_time = int(np.round(np.random.exponential(self.transition_matrix[current_location,
+                                                                                      current_location])))
+                p = np.random.exponential(self.transition_matrix[current_location, :] /
+                                          self.transition_matrix[current_location, current_location])
                 p[current_location] = 0
-                next_location = np.random.choice(next_positions, p=p / np.sum(p))
+                next_location = np.random.choice(range(len(next_positions)), p=p / np.sum(p))
 
             else:
                 raise ValueError("Unknown transition generation method")
