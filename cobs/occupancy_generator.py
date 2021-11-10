@@ -773,7 +773,7 @@ class Person:
         initial = True
         while current_time < self.end_time:
             if method == "Competing Clocks":
-                timers = np.random.exponential(self.transition_matrix[current_location, :])
+                timers = np.random.exponential(1 / self.transition_matrix[current_location, :])
                 next_location = timers.argmin()
                 if next_location == current_location:
                     timers[next_location] += np.max(timers)
@@ -781,10 +781,10 @@ class Person:
                 stay_time = int(np.round(timers[next_location]))
 
             elif method == "DTMC":
-                stay_time = int(np.round(np.random.exponential(self.transition_matrix[current_location,
-                                                                                      current_location])))
-                p = np.random.exponential(self.transition_matrix[current_location, :] /
-                                          self.transition_matrix[current_location, current_location])
+                stay_time = int(np.round(np.random.exponential(1 / self.transition_matrix[current_location,
+                                                                                          current_location])))
+                p = np.random.exponential(1 / (self.transition_matrix[current_location, :] /
+                                               self.transition_matrix[current_location, current_location]))
                 p[current_location] = 0
                 next_location = np.random.choice(range(len(next_positions)), p=p / np.sum(p))
 
