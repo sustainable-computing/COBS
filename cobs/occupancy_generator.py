@@ -39,24 +39,24 @@ class OccupancyGenerator:
         if random_seed is not None:
             seed(random_seed)
             np.random.seed(random_seed)
-        self.start_work = 9 * 60 * 60  # Work start from 9:00. unit: second
-        self.end_work = 17 * 60 * 60  # Work end at 17:00. unit: second
-        self.daily_report = 16 * 60 * 60  # Daily progress report at 16:00, in meeting room
-        self.daily_report_mean = 15 * 60  # Daily progress report average length 15 min
-        self.daily_report_std = 1 * 60  # Daily progress report std.dev 1 min
-        self.come_leave_flex_coef = 30 * 60  # Tend to come 8:30, average arrive at 9:00. Leave is similar. Exponential distribution
-        self.call_for_absence = 0.01  # Possibility of not come to the office
-        self.lunch_start_time = 12 * 60 * 60  # Lunch serve start time 12:00. unit: second
-        self.lunch_end_time = 13 * 60 * 60  # Lunch serve end time 13:00. unit: second
+        self.work_start_time = 9 * 60 * 60  # Work start from 9:00. unit: second
+        self.work_end_time = 17 * 60 * 60  # Work end at 17:00. unit: second
+        self.meeting_time = 16 * 60 * 60  # Daily progress report at 16:00, in meeting room
+        self.meeting_length_avg = 15 * 60  # Daily progress report average length 15 min
+        self.meeting_length_std = 1 * 60  # Daily progress report std.dev 1 min
+        self.max_earliness = 30 * 60  # Tend to come 8:30, average arrive at 9:00. Leave is similar. Exponential distribution
+        self.call_for_absence_prob = 0.01  # Possibility of not come to the office
+        self.lunch_break_start = 12 * 60 * 60  # Lunch serve start time 12:00. unit: second
+        self.lunch_break_end = 13 * 60 * 60  # Lunch serve end time 13:00. unit: second
         self.eat_time_a = 10  # average time for each person to eat lunch. Beta distribution
-        self.eat_time_b = 50  # average time for each person to eat lunch. Beta distribution
+        self.eat_time_b = self.lunch_break_end - self.lunch_break_start  # average time for each person to eat lunch. Beta distribution
         self.cut_off_time = 14 * 60 * 60  # After this time, the person won't come to work
         self.day_cut_off = 24 * 60 * 60
         self.start_synthetic_data = datetime(2020, 3, 25)  # start date
         self.end_synthetic_data = datetime(2020, 3, 27)  # end date
         self.report_interval = timedelta(seconds=60)  # Time interval between two consecutive package
         self.guest_lambda = 3  # Poisson arrival for unknown customers. unit: person per day
-        self.visit_colleague = 3  # How many times a worker goes to a colleague's office
+        self.visit_colleague_lambda = 3  # How many times a worker goes to a colleague's office
         self.average_stay_in_colleague_office = 30 * 60
         self.std_stay_in_colleague_office = 4 * 60
         self.average_stay_customer = 30 * 60
@@ -182,6 +182,8 @@ class OccupancyGenerator:
         :parameter add_to_model: Default is True. If False, then only generate the schedule in numpy and IDF format but not save to the model automatically.
 
         :parameter overwrite_dict: Default is None. If set to a dict with {zone_name: old_people_object_name}, it will overwrite existing People instead of creating a new one
+
+        :parameter use_scheduled_events: Default is True. Determines if the lunch and group meeting event will be simulated
 
         :return: Three objects, (IDF format schedule, numpy format schedule, list of all accessble locations in the building).
         """
@@ -547,17 +549,17 @@ class Person:
         """
         self.position = np.zeros(self.source.day_cut_off)
         # Decide absence
-        if np.random.random() < self.source.call_for_absence:
+        if np.random.random() < self.source.call_for_absence_prob:
             return False
         else:
             # Decide when come to office
-            arrival_time = (self.source.start_work - self.source.come_leave_flex_coef) + \
-                           int(np.random.exponential(self.source.come_leave_flex_coef))
+            arrival_time = (self.source.work_start_time - self.source.max_earliness) + \
+                           int(np.random.exponential(self.source.max_earliness))
             if arrival_time > self.source.cut_off_time:
                 return False
             else:
                 # Decide when go back home
-                leave_time = self.source.end_work + int(np.random.exponential(self.source.come_leave_flex_coef))
+                leave_time = self.source.work_end_time + int(np.random.exponential(self.source.max_earliness))
                 if leave_time >= self.source.day_cut_off:
                     leave_time = self.source.day_cut_off - 1
 
@@ -598,9 +600,9 @@ class Person:
 
         pass_zones = self.source.get_path(self.office, self.source.lunch_room)
         pass_zones.pop(0)
-        zone_move_timer = [self.source.lunch_start_time]
+        zone_move_timer = [self.source.lunch_break_start]
         # TODO: Trespass time
-        temp_timer = self.source.lunch_start_time + lunch_delay
+        temp_timer = self.source.lunch_break_start + lunch_delay
         for _ in pass_zones[:-1]:
             temp_timer = temp_timer + 3 + get_white_bias(1)
             zone_move_timer.append(temp_timer)
@@ -627,7 +629,7 @@ class Person:
         """
         # Arrive maximum 3 min early, 2 min late
         meeting_attend = int(np.random.exponential(3 * 60))
-        meeting_attend = self.source.daily_report - max(meeting_attend, 5 * 60)
+        meeting_attend = self.source.meeting_time - max(meeting_attend, 5 * 60)
 
         pass_zones = self.source.get_path(self.office, self.source.meeting_room)
         pass_zones.pop(0)
@@ -638,8 +640,8 @@ class Person:
             temp_timer = temp_timer - 3 + get_white_bias(1)
             zone_move_timer.insert(0, temp_timer)
 
-        zone_move_timer.append(self.source.daily_report +
-                               int(np.random.normal(self.source.daily_report_mean, self.source.daily_report_std)))
+        zone_move_timer.append(self.source.meeting_time +
+                               int(np.random.normal(self.source.meeting_length_avg, self.source.meeting_length_std)))
 
         temp_timer = zone_move_timer[-1]
         for _ in pass_zones[:-1]:
@@ -718,7 +720,7 @@ class Person:
 
         :return: None.
         """
-        for _ in range(np.random.poisson(self.source.visit_colleague)):
+        for _ in range(np.random.poisson(self.source.visit_colleague_lambda)):
             # Find available time for current person to meet some colleague
             in_office_range = self.get_in_office_range()
             visit_length = int(np.random.normal(self.source.average_stay_in_colleague_office,
@@ -756,9 +758,10 @@ class Person:
         if use_scheduled_events:
             self.generate_lunch()
             self.generate_daily_meeting()
-            for num_customer in customer_list:
-                time_list.append(self.handle_customer(num_customer))
-            self.generate_go_other_office()
+            if self.transition_matrix is not None:
+                for num_customer in customer_list:
+                    time_list.append(self.handle_customer(num_customer))
+                self.generate_go_other_office()
         return time_list
 
     def generate_base_positions(self, method="DTMC"):

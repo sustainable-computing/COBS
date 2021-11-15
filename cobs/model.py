@@ -111,9 +111,9 @@ class Model:
 
         # TODO: Validate input parameters
 
-        if idf_file_name is None:
+        if idf_file_name is None and climate_zone is not None:
             idf_file_name = f"./buildings/{prototype}_{climate_zone}_{heating_type}_{foundation_type}.idf"
-            if weather_file is None:
+            if weather_file is None and climate_zone is not None:
                 weather_file = f"./weathers/{climate_zone}.epw"
 
         if tmp_idf_path is None:
