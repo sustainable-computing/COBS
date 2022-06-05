@@ -2,6 +2,7 @@ import numpy as np
 import json
 from random import choice, seed
 from datetime import datetime, timedelta
+import warnings
 
 
 class OccupancyGenerator:
@@ -14,7 +15,8 @@ class OccupancyGenerator:
                  model,
                  num_occupant=10,
                  random_seed=None,
-                 transition_matrics=None):
+                 transition_matrics=None,
+                 office_assignment=None):
         """
         This class contains multiple editable attributes to generate the occupancy schedule. Default setting includes:
         Work shift: 9:00 ~ 17:00, where people start arriving/leaving 30 minutes earily.
@@ -35,6 +37,9 @@ class OccupancyGenerator:
         The last row and column represents the transition rate of the office to other zones (will overwrite previous transition rate).
         Transition rate in the unit of seconds.
         None means the occupant always stay in the office.
+        :parameter office_assignment: A list/tuple of zone names or None.
+        Each entry indicates the assigned office for the corresponding occupant. If length < num_occupant, other occupants will be assigned randomly.
+        Each entry must be a valid zone name included in the building IDF file.
         """
         if random_seed is not None:
             seed(random_seed)
@@ -72,24 +77,37 @@ class OccupancyGenerator:
         self.possible_locations.insert(0, "Outdoor")
         self.possible_locations.append("busy")
         self.weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        self.office_assignment = list()
 
         self.work_zones.remove(self.lunch_room)
         if self.meeting_room != self.lunch_room:
             self.work_zones.remove(self.meeting_room)
 
+        if office_assignment is not None:
+            for zone_name in office_assignment:
+                if zone_name == self.meeting_room or self.lunch_room:
+                    warnings.warn(f"Assigned office zone {zone_name} is a meeting room or lunch room.")
+                if zone_name in self.possible_locations:
+                    self.office_assignment.append(zone_name)
+                else:
+                    raise ValueError(f"Assigned office zone {zone_name} does not exist.")
+
+        while len(self.office_assignment) < num_occupant:
+            self.office_assignment.append(choice(self.work_zones))
+
         if isinstance(transition_matrics, (tuple, list)):
             if len(transition_matrics) != num_occupant:
                 raise ValueError(f"Length of the transition_matrics must be num_occupant {num_occupant}.")
             self.worker_assign = [Person(self,
-                                         office=choice(self.work_zones),
+                                         office=self.office_assignment[i],
                                          transition_rate_matrix=transition_matrics[i]) for i in range(num_occupant)]
         elif isinstance(transition_matrics, np.ndarray):
             self.worker_assign = [Person(self,
-                                         office=choice(self.work_zones),
-                                         transition_rate_matrix=transition_matrics.copy()) for _ in range(num_occupant)]
+                                         office=self.office_assignment[i],
+                                         transition_rate_matrix=transition_matrics.copy()) for i in range(num_occupant)]
         elif transition_matrics is None:
             self.worker_assign = [Person(self,
-                                         office=choice(self.work_zones)) for _ in range(num_occupant)]
+                                         office=self.office_assignment[i]) for i in range(num_occupant)]
         else:
             raise ValueError("transition_matrics must be a list/tuple of numpy.ndarray, single numpy.ndarray, or None.")
 

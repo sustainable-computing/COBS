@@ -59,6 +59,7 @@ class Model:
                  reward=None,
                  eplus_naming_dict=None,
                  eplus_var_types=None,
+                 eplus_meter_dict=None,
                  buffer_capacity=None,
                  buffer_seed=None,
                  buffer_chkpt_dir=None,
@@ -104,6 +105,7 @@ class Model:
         self.reward = reward
         self.eplus_naming_dict = dict() if eplus_naming_dict is None else eplus_naming_dict
         self.eplus_var_types = dict() if eplus_var_types is None else eplus_var_types
+        self.eplus_meter_dict = dict() if eplus_meter_dict is None else eplus_meter_dict
         self.prev_reward = None
         self.total_timestep = -1
         self.leap_weather = False
@@ -419,11 +421,18 @@ class Model:
         # Add state values
         state_vars = self.get_current_state_variables()
 
+        # Add for asked meter values
+        for meter_name in self.eplus_meter_dict:
+            handle = self.api.exchange.get_meter_handle(meter_name)
+            if handle == -1:
+                continue
+            current_state[self.eplus_meter_dict[meter_name]] = self.api.exchange.get_meter_value(handle)
+
         # Add for temp extra output
         for entry in self.idf.idfobjects['OUTPUT:VARIABLE']:
             # we only care about the output vars for Gnu-RL
             if (entry['Variable_Name'], entry['Key_Value']) in self.eplus_naming_dict.keys() or \
-               (entry['Variable_Name'], entry['Key_Value']) in state_vars:
+                    (entry['Variable_Name'], entry['Key_Value']) in state_vars:
                 var_name = entry['Variable_Name']
 
                 # if the key value is not associated with a zone return None for variable handler
@@ -584,12 +593,12 @@ class Model:
             raise ValueError("Your IDF files does not specify the run period."
                              "Please manually edit the IDF file or use Model().set_runperiod(...)")
         run_period = self.get_configuration("RunPeriod")[0]
-        start = datetime(year=run_period.Begin_Year if run_period.Begin_Year else 2000,
-                         month=run_period.Begin_Month,
-                         day=run_period.Begin_Day_of_Month)
-        end = datetime(year=run_period.End_Year if run_period.End_Year else start.year,
-                       month=run_period.End_Month,
-                       day=run_period.End_Day_of_Month)
+        start = datetime(year=int(run_period.Begin_Year) if int(run_period.Begin_Year) else 2000,
+                         month=int(run_period.Begin_Month),
+                         day=int(run_period.Begin_Day_of_Month))
+        end = datetime(year=int(run_period.End_Year) if int(run_period.End_Year) else start.year,
+                       month=int(run_period.End_Month),
+                       day=int(run_period.End_Day_of_Month))
         end += timedelta(days=1)
 
         if not self.leap_weather:
@@ -825,15 +834,18 @@ class Model:
         zone_window = {name: set() for name in self.get_available_names_under_group("Zone")}
         all_window = dict()
         for window in self.get_configuration("FenestrationSurface:Detailed"):
-            if window.Surface_Type != "WINDOW":
+            if window.Surface_Type.upper() != "WINDOW":
                 continue
-            all_window[window.Building_Surface_Name] = window.Name
+            if window.Building_Surface_Name not in all_window:
+                all_window[window.Building_Surface_Name] = list()
+            all_window[window.Building_Surface_Name].append(window.Name)
 
         for wall in self.get_configuration("BuildingSurface:Detailed"):
-            if wall.Surface_Type != "WALL":
+            if wall.Surface_Type.upper() != "WALL":
                 continue
             if wall.Name in all_window:
-                zone_window[wall.Zone_Name].add(all_window[wall.Name])
+                for name in all_window[wall.Name]:
+                    zone_window[wall.Zone_Name].add(name)
         return zone_window
 
     def get_doors(self):
@@ -883,7 +895,8 @@ class Model:
 
         return zone_blinds
 
-    def set_blinds(self, windows, blind_material_name=None, shading_control_type='AlwaysOff', setpoint=50, agent_control=False):
+    def set_blinds(self, windows, blind_material_name=None, shading_control_type='AlwaysOff', setpoint=50,
+                   agent_control=False):
         """
         Install blinds that can be controlled on some given windows.
 
@@ -914,6 +927,7 @@ class Model:
                         blind = {"Name": f"{window}_blind",
                                  "Slat Orientation": "Horizontal",
                                  "Slat Width": 0.025,
+                                 "Slat Angle": setpoint,
                                  "Slat Separation": 0.01875,
                                  "Front Side Slat Beam Solar Reflectance": 0.8,
                                  "Back Side Slat Beam Solar Reflectance": 0.8,
@@ -931,10 +945,11 @@ class Model:
                                "Shading Device Material Name": f"{blind_mat.Name}",
                                "Shading Control Type": shading_control_type,
                                "Setpoint": setpoint,
-                               "Type of Slat Angle Control for Blinds": "ScheduledSlatAngle",
+                               "Type of Slat Angle Control for Blinds": "FixedSlatAngle",
                                "Fenestration Surface 1 Name": window_idf.Name}
 
                     if agent_control:
+                        shading["Type of Slat Angle Control for Blinds"] = "ScheduledSlatAngle"
                         shading["Slat Angle Schedule Name"] = f"{window}_shading_schedule"
                         shading["Multiple Surface Control Type"] = "Group"
                         shading["Shading Control Is Scheduled"] = "Yes"
@@ -944,7 +959,6 @@ class Model:
                         self.add_configuration("Schedule:Constant", values=angle_schedule)
 
                     self.add_configuration("WindowShadingControl", values=shading)
-
 
     def set_occupancy(self, occupancy, locations):
         """

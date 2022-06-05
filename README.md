@@ -38,3 +38,10 @@ location = {Virtual Event, Japan},
 series = {BuildSys ’20}
 }
 ```
+
+## Changelog
++ 2022/06/05
+    + Fixed `eppy` usage.
+    + Fixed window blinds adding function.
+    + Added support for reading meters.
+    + Added support for manually assign offices to occupants.
