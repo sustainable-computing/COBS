@@ -96,7 +96,7 @@ class EventQueue:
         :param time: Target time.
         :return: a dictionary contains all events/actions scheduled at the given time.
         """
-        return self.queue.get(time, {"actuator": dict(), "global": dict()})
+        return self.queue.pop(time, {"actuator": dict(), "global": dict()})
 
     def trigger(self,
                 current_time: int):

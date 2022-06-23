@@ -63,7 +63,8 @@ class Model:
                  buffer_capacity=None,
                  buffer_seed=None,
                  buffer_chkpt_dir=None,
-                 tmp_idf_path=None):
+                 tmp_idf_path=None,
+                 extra_run_parameters=list()):
         """
         Initialize the building by loading the IDF file to the model.
 
@@ -110,6 +111,8 @@ class Model:
         self.total_timestep = -1
         self.leap_weather = False
         self.state_modifier = StateModifier()
+        self.environment_count = 1
+        self.previous_env = 0
 
         # TODO: Validate input parameters
 
@@ -123,7 +126,7 @@ class Model:
         else:
             self.input_idf = os.path.join(tmp_idf_path, "input.idf")
 
-        self.run_parameters = ["-d", "result", self.input_idf]
+        self.run_parameters = ["-d", "result", *extra_run_parameters, self.input_idf]
         if weather_file:
             self.run_parameters = ["-w", weather_file] + self.run_parameters
             with open(weather_file, 'r') as w_file:
@@ -380,16 +383,23 @@ class Model:
 
         """
         # print("Child: Not ready")
-        if not self.api.exchange.api_data_fully_ready() or not self.warmup_complete:
+        if not self.api.exchange.api_data_fully_ready() or not self.warmup_complete or self.api.exchange.warmup_flag():
             return
+        # print(self.api.exchange.warmup_flag())
+
         current_state = dict()
         # print("Child: Simulating")
+        current_state["environment_id"] = int(self.api.exchange.current_environment_num())
+        if self.previous_env == 0 or current_state["environment_id"] != self.previous_env:
+            self.previous_env = current_state["environment_id"]
+            self.counter = 0
         current_state["timestep"] = self.counter
         # print(self.get_date())
         current_state["time"] = self.get_date()
         current_state["temperature"] = dict()
         current_state["occupancy"] = dict()
-        current_state["terminate"] = self.total_timestep == self.counter
+        current_state["terminate"] = self.total_timestep == self.counter and \
+                                     current_state["environment_id"] == self.environment_count
         # if self.occupancy is not None:
         #     current_state["occupancy"] = {zone: value[self.counter] for zone, value in self.occupancy.items()}
         for name in self.zone_names:
@@ -467,6 +477,11 @@ class Model:
             events = self.child_energy.recv()
         else:
             # print(self.current_state)
+            if len(self.current_state) != 0 and self.current_state["environment_id"] != current_state["environment_id"]:
+                self.counter = 0
+                current_state["timestep"] = 0
+                self.queue = EventQueue()
+
             if self.counter != 0:
                 self.replay.push(self.current_state,
                                  self.queue.get_event(self.current_state["timestep"]),
@@ -500,7 +515,7 @@ class Model:
             value = events["global"][key][1]
             handle = self.api.exchange.get_global_handle(var_name)
             if handle == -1:
-                raise ValueError('Actuator handle could not be found: ', component_type, control_type, actuator_key)
+                raise ValueError('Actuator handle could not be found: ', var_name)
             self.api.exchange.set_global_value(handle, value)
 
         # if self.use_lock:
@@ -535,10 +550,15 @@ class Model:
         self.wait_for_state.clear()
         current_state = self.parent.recv()
         # if isinstance(current_state, dict):
-        self.replay.push(self.current_state,
-                         self.queue.get_event(self.current_state["timestep"]),
-                         current_state,
-                         current_state["terminate"])
+        if self.current_state["environment_id"] == current_state["environment_id"]:
+            self.replay.push(self.current_state,
+                             self.queue.get_event(self.current_state["timestep"]),
+                             current_state,
+                             current_state["terminate"])
+        else:
+            self.counter = 0
+            self.queue = EventQueue()
+            current_state["timestep"] = 0
         self.current_state = current_state
         # self.historical_values.append(self.current_state)
         if current_state["terminate"]:
@@ -593,10 +613,11 @@ class Model:
             raise ValueError("Your IDF files does not specify the run period."
                              "Please manually edit the IDF file or use Model().set_runperiod(...)")
         run_period = self.get_configuration("RunPeriod")[0]
-        start = datetime(year=int(run_period.Begin_Year) if int(run_period.Begin_Year) else 2000,
+
+        start = datetime(year=int(run_period.Begin_Year) if run_period.Begin_Year else 2000,
                          month=int(run_period.Begin_Month),
                          day=int(run_period.Begin_Day_of_Month))
-        end = datetime(year=int(run_period.End_Year) if int(run_period.End_Year) else start.year,
+        end = datetime(year=int(run_period.End_Year) if run_period.End_Year else start.year,
                        month=int(run_period.End_Month),
                        day=int(run_period.End_Day_of_Month))
         end += timedelta(days=1)
@@ -658,6 +679,9 @@ class Model:
             self.add_configuration("Output:Variable", {"Key Value": '*',
                                                        "Variable Name": "Zone People Occupant Count",
                                                        "Reporting Frequency": "Timestep"})
+        if self.get_configuration("SimulationControl")[0].Run_Simulation_for_Weather_File_Run_Periods.upper() == "NO":
+            self.get_configuration("SimulationControl")[0].Run_Simulation_for_Weather_File_Run_Periods = "Yes"
+        self.environment_count = self.get_num_environments()
         self.idf.saveas(self.input_idf)
         self.use_lock = False
         self.zone_names = self.get_available_names_under_group("Zone")
@@ -783,6 +807,17 @@ class Model:
                                 "Control Type": line[3],
                                 "Actuator Key": line[1]})
         return actions
+
+    def get_num_environments(self):
+        """
+        Calculate the number of environments the current IDF file defined. Each "SizingPeriod:DesignDay",
+        "SizingPeriod:WeatherFileDays", and "SizingPeriod:WeatherFileConditionType" are an environment.
+
+        :return: An integer indicates the total number of environments.
+        """
+        return sum([len(self.get_configuration(objects)) for objects in ("SizingPeriod:DesignDay",
+                                                                         "SizingPeriod:WeatherFileDays",
+                                                                         "SizingPeriod:WeatherFileConditionType")]) + 1
 
     def get_link_zones(self):
         """
